@@ -1,9 +1,7 @@
 #ifndef DROPBOXSERVER_H_INCLUDED
 #define DROPBOXSERVER_H_INCLUDED
 
-#define MAXFILES 10
-#define MAXNAME 10
-#define MAXDEVICES 2
+#include "dropboxUtil.h"
 
 struct file_info{
     char name[MAXNAME];
