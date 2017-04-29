@@ -1,11 +1,17 @@
 #include "dropboxClient.h"
+#include "dropboxUtil.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/sendfile.h>
+#include <fcntl.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 
+#define BUFSIZ 10
 
 int connect_server(char *host, int port)
 {
@@ -30,7 +36,10 @@ int connect_server(char *host, int port)
         return -2;
     }
 
-    return socket_client;
+    int flag = 1;
+    setsockopt(socket_client,IPPROTO_TCP,TCP_NODELAY,(char *)&flag,sizeof(flag));
+
+    return 0;
 }
 
 void close_connection()
@@ -48,7 +57,8 @@ user_cmd string2userCmd(char *cmd)
         printf ("cmd: %s\n",pch);
         strcpy(temp.cmd, pch);
         pch = strtok (NULL, " ");
-        if (pch != NULL){
+        if (pch != NULL)
+        {
             printf ("param: %s\n",pch);
             strcpy(temp.param, pch);
         }
@@ -56,17 +66,43 @@ user_cmd string2userCmd(char *cmd)
     return temp;
 }
 
-void clean_stdin()
+void send_file(char *file)
 {
-    int c;
-    do {
-        c = getchar();
-    } while (c != '\n' && c != EOF);
-}
 
+    int fs = file_size(file);
+
+    FILE *fp = fopen(file, "r");
+
+    char buffer[fs + 1];
+
+    fread(buffer, fs, 1, fp);
+
+    // envia o tamanho do arquivo
+    int sent_bytes = send(socket_client, &fs, sizeof(int), 0);
+
+    printf("%d %d \n", sent_bytes, fs);
+
+    // enquanto não enviar todo o arquivo envia o proximo pacote. Também da para enviar o arquivo inteiro de uma vez, mas não sei se não pode dar problema.
+    int offset = 0;
+    while (((sent_bytes = send(socket_client, &(buffer[offset]), BUFSIZ, 0)) > 0) && (fs > offset))
+    {
+        fprintf(stdout, "1. Server sent %d bytes from file's data, offset is now : %d\n", sent_bytes, offset);
+        offset += sent_bytes;
+        fprintf(stdout, "2. Server sent %d bytes from file's data, offset is now : %d\n", sent_bytes, offset);
+    }
+}
 
 /*
     Discutir isso com quem fará o server, há necessidade de um protocolo.
+
+    ex.: user abre conexão e manda ID
+        server da ok pro ID
+        user manda o nome do arquivo
+        server da ok pro nome do arquivo
+        user manda o tamanho do arquivo
+        server da ok pro tamanho do arquivo
+        user manda o arquivo
+        server da ok pro arquivo (talvez não precise, pois, se user fecha conexão, server ainda recebe o que esta na fila de dados)
 
     Como mandar <nome usuário> para server? Ideia: seria a primeira informação a mandar após conexão inicia. Precisará de uma funão adicional para fazer isso.
     Como mandar <nome do arquivo> para server? Ideia: mandar <nome do arquivo>, tamanho e depois arquivo em si.
@@ -76,26 +112,33 @@ void clean_stdin()
 
 int main(int argc, char *argv[])
 {
-    if(argc < 3)
+    int flag = 1;
+
+    if(argc <= 3)
     {
         printf("call ./dropboxClient fulano endereço porta\n");
         //return -1;
     }
 
-    //connect_server(argv[1], argv[2]);
+    printf("%s %s\n",argv[2], argv[3]);
+
+    if( connect_server(argv[2], atoi( argv[3] )) < 0){
+        printf("connection failed\n");
+        //return -1;
+    }
 
     char cmd_line[MAXCMD + 2*MAXNAME + 2] = "";
     user_cmd userCmd;
 
     do
     {
-        fgets(cmd_line, sizeof(cmd_line), stdin);
+        gets(cmd_line);
         userCmd = string2userCmd(cmd_line);
 
         if(!strcmp(userCmd.cmd, "upload"))
         {
             printf("Upload\n");
-
+            send_file("a.txt");
         }
         else if(!strcmp(userCmd.cmd, "download"))
         {
@@ -112,11 +155,13 @@ int main(int argc, char *argv[])
             printf("Get Sync DIR\n");
 
         }
-        else {
+        else if(strcmp(userCmd.cmd, "exit"))
+        {
             printf("Invalid command\n");
         }
-        clean_stdin();
+
     }
     while(strcmp(userCmd.cmd, "exit"));
 
+    close_connection();
 }

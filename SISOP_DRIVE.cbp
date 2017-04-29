@@ -34,10 +34,6 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="dropboxUtil.h" />
-		<Unit filename="simpleServer.c">
-			<Option compilerVar="CC" />
-			<Option target="&lt;{~None~}&gt;" />
-		</Unit>
 		<Extensions>
 			<code_completion />
 			<debugger />
