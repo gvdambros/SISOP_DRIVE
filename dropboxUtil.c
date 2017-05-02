@@ -31,3 +31,23 @@ int file_size(char *file){
 
     return file_stat.st_size;
 }
+
+user_cmd string2userCmd(char *cmd)
+{
+    printf("%s\n", cmd);
+    char *pch;
+    user_cmd temp;
+    pch = strtok (cmd," ");
+    if (pch != NULL)
+    {
+        printf ("cmd: %s\n",pch);
+        strcpy(temp.cmd, pch);
+        pch = strtok (NULL, " ");
+        if (pch != NULL)
+        {
+            printf ("param: %s\n",pch);
+            strcpy(temp.param, pch);
+        }
+    }
+    return temp;
+}

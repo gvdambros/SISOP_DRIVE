@@ -47,27 +47,16 @@ void close_connection()
     close(socket_client);
 }
 
-user_cmd string2userCmd(char *cmd)
-{
-    char *pch;
-    user_cmd temp;
-    pch = strtok (cmd," ");
-    if (pch != NULL)
-    {
-        printf ("cmd: %s\n",pch);
-        strcpy(temp.cmd, pch);
-        pch = strtok (NULL, " ");
-        if (pch != NULL)
-        {
-            printf ("param: %s\n",pch);
-            strcpy(temp.param, pch);
-        }
-    }
-    return temp;
-}
-
 void send_file(char *file)
 {
+
+    char* request = (char*) malloc(MAXCMD + 2*MAXNAME + 2);
+
+    // send request for upload of file
+    strcpy(request,"upload ");
+    strcat(request, file);
+
+    send(socket_client, request, MAXREQUEST, 0);
 
     int fs = file_size(file);
 
@@ -78,18 +67,16 @@ void send_file(char *file)
     fread(buffer, fs, 1, fp);
 
     // envia o tamanho do arquivo
-    int sent_bytes = send(socket_client, &fs, sizeof(int), 0);
+    int aux = htons(fs);
+
+    int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
 
     printf("%d %d \n", sent_bytes, fs);
 
     // enquanto não enviar todo o arquivo envia o proximo pacote. Também da para enviar o arquivo inteiro de uma vez, mas não sei se não pode dar problema.
     int offset = 0;
-    while (((sent_bytes = send(socket_client, &(buffer[offset]), BUFSIZ, 0)) > 0) && (fs > offset))
-    {
-        fprintf(stdout, "1. Server sent %d bytes from file's data, offset is now : %d\n", sent_bytes, offset);
-        offset += sent_bytes;
-        fprintf(stdout, "2. Server sent %d bytes from file's data, offset is now : %d\n", sent_bytes, offset);
-    }
+    sent_bytes = send(socket_client, &(buffer[offset]), fs, 0);
+
 }
 
 /*
@@ -112,7 +99,6 @@ void send_file(char *file)
 
 int main(int argc, char *argv[])
 {
-    int flag = 1;
 
     if(argc <= 3)
     {
@@ -164,4 +150,6 @@ int main(int argc, char *argv[])
     while(strcmp(userCmd.cmd, "exit"));
 
     close_connection();
+
+    return 0;
 }
