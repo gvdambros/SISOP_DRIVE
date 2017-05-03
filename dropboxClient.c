@@ -11,8 +11,6 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 
-#define BUFSIZ 10
-
 int connect_server(char *host, int port)
 {
     //int socket_client;
@@ -47,37 +45,83 @@ void close_connection()
     close(socket_client);
 }
 
+void get_file(char *file)
+{
+
+    char buf[1024*1024]; //buffer 1MG
+
+    char* request = (char*) malloc(MAXREQUEST);
+
+    // send request for upload of file
+    // always send the biggest request possible
+    strcpy(request,"download ");
+    strcat(request, file);
+    send(socket_client, request, MAXREQUEST, 0);
+
+    // receive file size from server
+    uint16_t aux;
+    int sent_bytes = recv(socket_client, &aux, sizeof(int), 0);
+    int size = ntohs(size);
+
+    // create the file
+	FILE *fp = fopen(file, "w");
+
+    // while it didn't read all the file, keep reading
+    int acc = 0;
+    while (acc < size)
+    {
+        // receive at most 1MB of data
+        int read = recv(client_fd, buf, BUFFER_SIZE, 0);
+
+        // write the received data in the file
+        fwrite(buf, sizeof(char), read, fp);
+
+        printf("dados: %d\n", read);
+        acc += read;
+    }
+
+    return;
+}
+
 void send_file(char *file)
 {
 
-    char* request = (char*) malloc(MAXCMD + 2*MAXNAME + 2);
+    char* request = (char*) malloc(MAXREQUEST);
 
     // send request for upload of file
+    // always send the biggest request possible
     strcpy(request,"upload ");
     strcat(request, file);
-
     send(socket_client, request, MAXREQUEST, 0);
 
+    // get file size and send it to server
     int fs = file_size(file);
-
-    FILE *fp = fopen(file, "r");
-
-    char buffer[fs + 1];
-
-    fread(buffer, fs, 1, fp);
-
-    // envia o tamanho do arquivo
     int aux = htons(fs);
-
     int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
 
     printf("%d %d \n", sent_bytes, fs);
 
-    // enquanto não enviar todo o arquivo envia o proximo pacote. Também da para enviar o arquivo inteiro de uma vez, mas não sei se não pode dar problema.
-    int offset = 0;
-    sent_bytes = send(socket_client, &(buffer[offset]), fs, 0);
+    // send all the content at once to the server
+    FILE *fp = fopen(file, "r");
+    char buffer[fs + 1];
+    fread(buffer, fs, 1, fp);
+    sent_bytes = send(socket_client, &(buffer), fs, 0);
 
+    return;
 }
+
+void send_id(char *id)
+{
+    char* request = (char*) malloc(MAXNAME);
+
+    // send id to server
+    // always send the biggest name possible
+    strcpy(request, id);
+    send(socket_client, request, MAXNAME, 0);
+
+    return;
+}
+
 
 /*
     Discutir isso com quem fará o server, há necessidade de um protocolo.
@@ -108,10 +152,13 @@ int main(int argc, char *argv[])
 
     printf("%s %s\n",argv[2], argv[3]);
 
-    if( connect_server(argv[2], atoi( argv[3] )) < 0){
+    if( connect_server(argv[2], atoi( argv[3] )) < 0)
+    {
         printf("connection failed\n");
         //return -1;
     }
+
+    send_id(argv[1]);
 
     char cmd_line[MAXCMD + 2*MAXNAME + 2] = "";
     user_cmd userCmd;
@@ -131,7 +178,7 @@ int main(int argc, char *argv[])
             printf("Download\n");
 
         }
-        else if(!strcmp(userCmd.cmd, "list"))
+        else if(!strcmp(userCmd.cmd, "up"))
         {
             printf("List\n");
 
