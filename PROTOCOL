@@ -1,0 +1,55 @@
+CLIENTE
+	- conecta com o server
+	- assim que a conexão é estabelecida, envia o nome de usuario (sempre envia maior tamanho de nome possivel)
+	- envia requesição para o server (sempre envia o maior tamanho de requisição possível)
+	COMANDOS
+		UPLOAD
+			-	envia requisição ("upload <nome do arquivo>")
+			- envia tamanho do arquivo (int 4 bytes big endian)
+			-	envia arquivo
+		DOWNLOAD
+			- envia requisição ("download <nome do arquivo>")
+			- recebe tamanho do arquivo (int 4 bytes big endian, 0 se arquivo não existe)
+			- recebe arquivo
+		
+PROCEDIMENTO SYNC
+	- o procedimento começa assim que usuario conecta
+	- a cada 10 segundos confere se houve alguma alteração no diretorio
+	AÇOES
+		- ADD
+			- chama procedimento de UPLOAD listado acima
+		- DELETE
+			- envia requisição ("delete <nome do arquivo>")
+		- MODIFICADO
+			- chama procedimento de UPLOAD listado acima (server tem que identificar que arquivo já existe e atualizar ele)
+		- RENAME
+			- ????
+
+OBS.: Talvez haja a necessidade de exclusão mútua nos envios uma vez que o usuário e o procedimento de sync podem querer enviar dados ao mesmo tempo.
+
+SERVER
+	- espera por conexão
+	- o server criará uma thread para o cliente quando esse se conectar
+	- thread ficara esperando por requisições vindas do usuário
+	REQUISIÇÕES
+		UPLOAD
+			-	receve requisição ("upload <nome do arquivo>")
+			- recebe tamanho do arquivo (int 4 bytes big endian)
+			-	recebe arquivo
+		DOWNLOAD
+			- recebe requisição ("download <nome do arquivo>")
+			- envia tamanho do arquivo (int 4 bytes big endian, 0 se arquivo não existe)
+			- envia arquivo
+		- ADD
+			- chama procedimento de UPLOAD listado acima
+		- DELETE
+			- recebe requisição ("delete <nome do arquivo>")
+			- deleta arquivo
+		- MODIFICADO
+			- chama procedimento de UPLOAD listado acima
+			- identifica que foi uma modificação e sobrescreve arquivo
+		- RENAME
+			- ????
+
+
+		
