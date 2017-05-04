@@ -9,7 +9,14 @@ void send_file(char *file);
 void get_file(char *file);
 void close_connection();
 
+
+// ADDED STUFF
+
 int socket_client; // Maybe it shouldn't be here
+
+void delete_file(char *file);
+
+// ADDED STUFF
 
 
 #endif // DROPBOXCLIENT_H_INCLUDED
