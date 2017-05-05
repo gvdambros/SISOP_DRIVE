@@ -97,6 +97,8 @@ void send_file(char *file)
 
     char* request = (char*) malloc(MAXREQUEST);
 
+    sem_wait(&runningRequest);
+
     // send request to upload of file
     // always send the biggest request possible
     strcpy(request,"upload ");
@@ -115,6 +117,8 @@ void send_file(char *file)
     char buffer[fs + 1];
     fread(buffer, fs, 1, fp);
     sent_bytes = send(socket_client, &(buffer), fs, 0);
+
+    sem_post(&runningRequest);
 
     return;
 }
@@ -203,7 +207,7 @@ void *sync_function()
 
 int main(int argc, char *argv[])
 {
-    pthread_t sync_thread;
+
 
     if(argc <= 3)
     {
@@ -222,7 +226,9 @@ int main(int argc, char *argv[])
         send_id(argv[1]);
     }
 
-    pthread_create(&sync_thread, NULL, sync_function, NULL);
+    sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
+    pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
+
 
     char cmd_line[MAXCMD + 2*MAXNAME + 2] = "";
     user_cmd userCmd;
