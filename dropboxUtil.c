@@ -51,3 +51,13 @@ user_cmd string2userCmd(char *cmd)
     }
     return temp;
 }
+
+// wait until it receives s bytes
+int safe_recv(int client_fd, char *buf, int s){
+	int offset = 0;
+	while(offset < s){
+		int recv_bytes = recv(client_fd, &(buf[offset]), s, 0);
+		offset += recv_bytes;
+	}
+	return offset;
+}

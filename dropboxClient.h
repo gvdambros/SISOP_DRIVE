@@ -14,6 +14,7 @@ void close_connection();
 
 pthread_t sync_thread;
 sem_t	runningRequest;
+int running;
 int socket_client; // Maybe it shouldn't be here
 
 void delete_file(char *file);

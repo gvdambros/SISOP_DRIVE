@@ -18,7 +18,9 @@
 #define EVENT_SIZE  ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
 
-#define BUFFER_SIZE 1024*1024
+#define BUFFER_SIZE 10
+
+#include <time.h>
 
 int connect_server(char *host, int port)
 {
@@ -54,6 +56,39 @@ void close_connection()
     close(socket_client);
 }
 
+int sync_client(){
+
+    char* request = (char*) malloc(MAXREQUEST);
+    char* fileName = (char*) malloc( 2*MAXNAME + 2);
+
+    // send request to sync
+    // always send the biggest request possible
+    strcpy(request,"sync ");
+    send(socket_client, request, MAXREQUEST, 0);
+
+    time_t rawtime;
+    time ( &rawtime );
+    struct tm *timeinfo = localtime ( &rawtime );
+
+    // send the time of the last sync, the problem is how to get it once that the software is restarted.
+    send(socket_client,(char*) &rawtime, sizeof(struct tm), 0);
+
+    // number of changes
+    int numOfChanges;
+    safe_recv(socket_client, &numOfChanges, sizeof(int));
+
+    int i;
+    for (i = 0; i < numOfChanges; i++){
+
+        safe_recv(socket_client, &fileName, 2*MAXNAME + 2);
+        get_file(fileName);
+
+    }
+
+    return;
+}
+
+
 void get_file(char *file)
 {
 
@@ -69,7 +104,7 @@ void get_file(char *file)
 
     // receive file size from server
     uint16_t aux;
-    int sent_bytes = recv(socket_client, &aux, sizeof(int), 0);
+    int sent_bytes = safe_recv(socket_client, &aux, sizeof(int));
     int size = ntohs(size);
 
     // create the file
@@ -80,7 +115,7 @@ void get_file(char *file)
     while (acc < size)
     {
         // receive at most 1MB of data
-        int read = recv(socket_client, buf, BUFFER_SIZE, 0);
+        int read = safe_recv(socket_client, buf, BUFFER_SIZE);
 
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
@@ -114,9 +149,18 @@ void send_file(char *file)
 
     // send all the content at once to the server
     FILE *fp = fopen(file, "r");
-    char buffer[fs + 1];
-    fread(buffer, fs, 1, fp);
-    sent_bytes = send(socket_client, &(buffer), fs, 0);
+    char buffer[BUFFER_SIZE];
+
+    int offset = 0;
+
+    while(offset < fs){
+        fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+        sent_bytes = send(socket_client, (char*) buffer, BUFFER_SIZE, 0);
+        offset += sent_bytes;
+        sleep(1);
+    }
+
+    printf("sending done\n");
 
     sem_post(&runningRequest);
 
@@ -158,14 +202,18 @@ void *sync_function()
     }
     watch = inotify_add_watch( guard, "sync_dir_gvdambros", IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY | IN_CREATE | IN_DELETE );
 
-    while(1)
+    // Setting non-blocking read for guard
+    int flags = fcntl(guard, F_GETFL, 0);
+    fcntl(guard, F_SETFL, flags | O_NONBLOCK);
+
+    while(running)
     {
 
         sleep(1);
 
         if( (numOfChanges = read( guard, buffer, EVENT_BUF_LEN )) < 0)
         {
-            printf("READ error\n");
+            //nothing was read
         }
 
         i = 0;
@@ -174,24 +222,16 @@ void *sync_function()
             struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
             if ( event->len )
             {
-                if ( (event->mask & IN_CREATE) || (event->mask & IN_MODIFY) )
+                if ( (event->mask & IN_CREATE) || (event->mask & IN_MODIFY) || (event->mask & IN_MOVED_TO))
                 {
                     // server has to decide if it was a new file or a modification by seeing if the file already exists.
+                    printf("add %s\n", event->name);
                     send_file(event->name);
                 }
-                else if ( event->mask & IN_DELETE )
+                else if ( (event->mask & IN_DELETE) || (event->mask & IN_MOVED_FROM) )
                 {
                     // new function.
                     delete_file(event->name);
-                }
-                else if( event->mask & IN_MOVED_FROM)
-                {   // file rename is a IN_MOVED_FROM followed by a IN_MOVED_TO event
-                    // maybe there is a better way to do it
-                    printf( "File %s moved from .\n", event->name );
-                }
-                else if( event->mask & IN_MOVED_TO)
-                {
-                    printf( "File %s moved to.\n", event->name );
                 }
             }
             i += EVENT_SIZE + event->len;
@@ -226,9 +266,10 @@ int main(int argc, char *argv[])
         send_id(argv[1]);
     }
 
+    running = 1;
+
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
-
 
     char cmd_line[MAXCMD + 2*MAXNAME + 2] = "";
     user_cmd userCmd;
@@ -248,8 +289,9 @@ int main(int argc, char *argv[])
             printf("Download\n");
 
         }
-        else if(!strcmp(userCmd.cmd, "up"))
+        else if(!strcmp(userCmd.cmd, "list"))
         {
+            sync_client();
             printf("List\n");
 
         }
@@ -265,6 +307,12 @@ int main(int argc, char *argv[])
 
     }
     while(strcmp(userCmd.cmd, "exit"));
+
+    printf("Finishing program...\n");
+
+    // kill sync thread
+    running = 0;
+    pthread_join(sync_thread, NULL);
 
     close_connection();
 
