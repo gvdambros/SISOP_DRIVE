@@ -12,28 +12,43 @@ typedef struct file_info{
     char extension[MAXNAME];
     char last_modified[MAXNAME];
     int size;
-} file_info;
+} FILE_INFO;
 
-struct client{
+typedef struct client{
     int devices[MAXDEVICES];
     char userid[MAXNAME];
-    file_info file_info[MAXFILES];
+    FILE_INFO file_info[MAXFILES];
     int logged_in;
-};
+}CLIENT;
 
 void sync_server();
 void receive_file(char *file);
 void get_file(char *file);
 
 // ADDED STUFF
+//Structs
+typedef struct lst{
+    CLIENT cli;
+    struct lst *next;
+}CLIENT_LIST;
+
+void initializerList();
+int insertList(CLIENT newCliente);
+CLIENT_LIST* searchInClientList(CLIENT nodo);
+
+
 //Funções
 int connect_client();
 int acceptLoop();
 int read_and_write(int id_cliente);
+
 // Variáveis
-int running;
-int socket_server;
+CLIENT_LIST *clientLst_ = NULL; //lista global de clientes
+int running_;
+int socket_server_;
 char buffer[BUFFER_SIZE];//temporario
+
+
 // ADDED STUFF
 
 #endif // DROPBOXSERVER_H_INCLUDED
