@@ -45,7 +45,7 @@ CLIENT_LIST* searchInClientList(CLIENT nodo){
     while(ptr != NULL){
         a = strcmp(ptr->cli.userid, nodo.userid);
         if(a == 0)
-            return ptr;     //*VERIFICAR* DEVERIA RETORNAR LISTA? ACHO QUE DEVERIA RETORNAR O NODO, SIMPLIFICA AS COISAS
+            return ptr; //Retorna um CLIENT_LIST
         else
             ptr = ptr->next;
     }
@@ -125,14 +125,14 @@ CLIENT_LIST* verify_client(char *id_client){
 	CLIENT new_client;
 	CLIENT_LIST *existing_client;
 
-    new_client.userid[MAXNAME] = id_client;
+    strcpy(new_client.userid, id_client);
 	existing_client = searchInClientList(new_client);
 	if (existing_client == NULL){
 
 		//Registra e retorna um novo cliente
 		printf("Registering Client\n");
 
-		//Atributos inicializados?
+		//Quais atributos inicializar?
 		//new_client.devices[MAXDEVICES] = [0,0];
 
 		new_client.logged_in = 1;
@@ -141,13 +141,13 @@ CLIENT_LIST* verify_client(char *id_client){
 			printf("Client unsuccessfully registered\n");
 			return NULL;
 		} else {
-			printf("Client successfully registered: %s", id_client);
+			printf("Client successfully registered\n");
 			return searchInClientList(new_client);
 		}
 	} else {
 
 		//Retorna um cliente existente
-		printf("Client %s is already registered\n", id_client);
+		printf("Client is already registered\n");
 		return existing_client;
 	}
 }
@@ -159,8 +159,7 @@ void client_handling(char *id_client){
     CLIENT_LIST *current_client;
     current_client = verify_client(id_client);
 
-    //APARENTEMENTE NOSSA FILA ESTÁ BUGADA, VERIFICAR
-    printf("aaaaaa %s", current_client->cli.userid);
+    printf("Client_handling check: Client registered: %s", current_client->cli.userid); //Print de verificação para ver se o treco tá indo pra lista corretamente
 
     pthread_exit(0);
 }
