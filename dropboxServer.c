@@ -5,7 +5,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include "dropboxServer.h"
-
+#include <pthread.h>
 
 #define on_error(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr); exit(1); }
 
@@ -18,7 +18,7 @@ int insertList(CLIENT newClient){
     new_node = (CLIENT_LIST *)malloc(sizeof(CLIENT_LIST));
 
     if(new_node == NULL){
-        printf("Insert Error!");
+        printf("ERROR on insertList\n");
         return 1;
     }
 
@@ -45,7 +45,7 @@ CLIENT_LIST* searchInClientList(CLIENT nodo){
     while(ptr != NULL){
         a = strcmp(ptr->cli.userid, nodo.userid);
         if(a == 0)
-            return ptr;
+            return ptr;     //*VERIFICAR* DEVERIA RETORNAR LISTA? ACHO QUE DEVERIA RETORNAR O NODO, SIMPLIFICA AS COISAS
         else
             ptr = ptr->next;
     }
@@ -56,16 +56,20 @@ int connect_client(){
 
 	struct sockaddr_in serv_addr;
 
-    if ((socket_server_ = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-        printf("ERROR opening socket");
+    if ((socket_server_ = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+        printf("ERROR opening socket\n");
+        return -1;
+    }
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(PORT);
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	bzero(&(serv_addr.sin_zero), 8);
 
-    if (bind(socket_server_, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
-		printf("ERROR on binding");
+    if (bind(socket_server_, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+		printf("ERROR on binding\n");
+        return -1;
+    }
 
     listen(socket_server_, 5);
 
@@ -73,35 +77,34 @@ int connect_client(){
 }
 
 int acceptLoop(){
-    int new_socket_cliente;
-    struct sockaddr_in cli_addr;
-    //char buffer[BUFFER_SIZE];
-    socklen_t clilen;
+	int new_socket_client;
+	struct sockaddr_in cli_addr;
+	socklen_t clilen;
 
-    clilen = sizeof(struct sockaddr_in);
-    if ((new_socket_cliente = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
-		printf("ERROR on accept");
+	clilen = sizeof(struct sockaddr_in);
+	if ((new_socket_client = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
+		printf("ERROR on accept\n");
 
 	bzero(buffer, BUFFER_SIZE);
 
-	return new_socket_cliente;
+	return new_socket_client;
 }
 
-int read_and_write(int id_cliente){
-    int n;
+int read_and_write(int id_client){
+	int n;
 
     /* read from the socket */
-	n = read(id_cliente, buffer, BUFFER_SIZE);
+	n = read(id_client, buffer, BUFFER_SIZE);
 	if (n < 0)
-		printf("ERROR reading from socket");
+		printf("ERROR reading from socket\n");
 	printf("Here is the message: %s\n", buffer);
 
 	/* write in the socket */
-	n = write(id_cliente,"I got your message", BUFFER_SIZE);
+	n = write(id_client,"I got your message\n", BUFFER_SIZE);
 	if (n < 0)
-		printf("ERROR writing to socket");
+		printf("ERROR writing to socket\n");
 
-    return n;
+	return n;
 }
 
 char* read_userId(int id_client){
@@ -109,13 +112,58 @@ char* read_userId(int id_client){
     /* read from the socket */
     n = read(id_client, buffer, BUFFER_SIZE);
     if (n < 0)
-        printf("ERROR reading from socket");
+        printf("ERROR reading from socket\n");
     printf("The userID is: %s\n", buffer);
 
     return buffer;
-
 }
 
+CLIENT_LIST* verify_client(char *id_client){
+
+	//Função responsável pela verificação da existência/registro de um cliente
+
+	CLIENT new_client;
+	CLIENT_LIST *existing_client;
+
+    new_client.userid[MAXNAME] = id_client;
+	existing_client = searchInClientList(new_client);
+	if (existing_client == NULL){
+
+		//Registra e retorna um novo cliente
+		printf("Registering Client\n");
+
+		//Atributos inicializados?
+		//new_client.devices[MAXDEVICES] = [0,0];
+
+		new_client.logged_in = 1;
+
+		if (insertList(new_client) < 0) {
+			printf("Client unsuccessfully registered\n");
+			return NULL;
+		} else {
+			printf("Client successfully registered: %s", id_client);
+			return searchInClientList(new_client);
+		}
+	} else {
+
+		//Retorna um cliente existente
+		printf("Client %s is already registered\n", id_client);
+		return existing_client;
+	}
+}
+
+void client_handling(char *id_client){
+
+    //Visa organizar todas as ações relacionadas a lidar com o login de um usuário e realizar suas solicitações
+
+    CLIENT_LIST *current_client;
+    current_client = verify_client(id_client);
+
+    //APARENTEMENTE NOSSA FILA ESTÁ BUGADA, VERIFICAR
+    printf("aaaaaa %s", current_client->cli.userid);
+
+    pthread_exit(0);
+}
 
 void sync_server(){
 
@@ -125,20 +173,31 @@ void sync_server(){
 
 int main (int argc, char *argv[]) {
     running_ = 1;
-    int c, id_client;
+    int id_client, id_thread;
+    char userId[MAXNAME];
+	pthread_t thread;
 
-    c = connect_client();
-    if(c == 0)
+    if(connect_client() == 0)
         printf("Server Connected!!!\n");
 
-    char userId[MAXNAME];
+    initializerList(); //Inicializa a lista de clientes
 
     while(running_){
         id_client = acceptLoop();
         if(id_client >= 0){
-            read_and_write(id_client);
-            strcpy(userId, read_userId(id_client));
+        	strcpy(userId, read_userId(id_client));
 
+            /*
+            Acho que aqui criamos uma thread para cada login de usuário (máx de 2 logins/threads por usuário)
+            Então precisamos ajustar as rotinas pra:
+                *verificar se existe o usuário, retornar o nodo dele: função verify_client(char id_client);
+                *verificar se está logado no server e quantas vezes está logado (max: 2)
+                *manter a thread ativa recebendo requisições desse usuário (algum loop)
+
+                *podemos organizar isso tudo em client_handling(char id_client)
+            */
+
+            pthread_create(&thread, NULL, client_handling, userId);
         }
     }
 
