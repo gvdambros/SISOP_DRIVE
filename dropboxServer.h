@@ -19,7 +19,12 @@ typedef struct client{
     char userid[MAXNAME];
     FILE_INFO file_info[MAXFILES];
     int logged_in;
-}CLIENT;
+} CLIENT;
+
+typedef struct arg_struct {
+    char arg1[MAXNAME];
+    int arg2;
+} ARGS;
 
 void sync_server();
 void receive_file(char *file);
@@ -40,7 +45,7 @@ CLIENT_LIST* searchInClientList(CLIENT nodo);
 //Funções
 int connect_client();
 int acceptLoop();
-int read_and_write(int id_cliente);
+int read_and_write(int id_cliente, char *buffer);
 
 // Variáveis
 CLIENT_LIST *clientLst_ = NULL; //lista global de clientes
