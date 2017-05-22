@@ -1,6 +1,11 @@
 CLIENTE
 	- conecta com o server
 	- assim que a conexão é estabelecida, envia o nome de usuario (sempre envia maior tamanho de nome possivel)
+	- roda a função sync_client
+		- envia número de arquivos no diretório		
+		- envia o nome e data de ultima modificação de todos os arquivos
+		- recebe quantos arquivos não estão sincronizados
+		- recebe todos os arquivos não sincronizados (nome, tamanho e dados)
 	- envia requesição para o server (sempre envia o maior tamanho de requisição possível)
 	COMANDOS
 		UPLOAD
@@ -12,7 +17,7 @@ CLIENTE
 			- recebe tamanho do arquivo (int 4 bytes big endian, 0 se arquivo não existe)
 			- recebe arquivo
 		
-PROCEDIMENTO SYNC
+PROCEDIMENTO SYNC (10 em 10 segundos)
 	- o procedimento começa assim que usuario conecta
 	- a cada 10 segundos confere se houve alguma alteração no diretorio
 	AÇOES
@@ -23,7 +28,7 @@ PROCEDIMENTO SYNC
 		- MODIFICADO
 			- chama procedimento de UPLOAD listado acima (server tem que identificar que arquivo já existe e atualizar ele)
 		- RENAME
-			- ????
+			- DELETE seguido de ADD
 
 OBS.: Talvez haja a necessidade de exclusão mútua nos envios uma vez que o usuário e o procedimento de sync podem querer enviar dados ao mesmo tempo.
 
@@ -48,8 +53,6 @@ SERVER
 		- MODIFICADO
 			- chama procedimento de UPLOAD listado acima
 			- identifica que foi uma modificação e sobrescreve arquivo
-		- RENAME
-			- ????
 
 
 		

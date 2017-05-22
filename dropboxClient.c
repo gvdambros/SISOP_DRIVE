@@ -4,12 +4,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <dirent.h>
+#include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/sendfile.h>
 
-// #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 
@@ -56,38 +59,101 @@ void close_connection()
     close(socket_client);
 }
 
-int sync_client(){
-
+int sync_client()
+{
+    char dir[100] = "/home/";
+    char *user; // nome do usuario linux
+    int i;
+    char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
-    char* fileName = (char*) malloc( 2*MAXNAME + 2);
+    char* fileName = (char*) malloc( MAXFILENAME );
+    char* filePath = (char*) malloc(200);
+
+    user = getLinuxUser();
+    strcat(dir, user);
+    strcat(dir, "/sync_dir_");
+    strcat(dir, name_client);
+
+    if( !dir_exists (dir) )
+    {
+        mkdir(dir, 0777);
+    }
 
     // send request to sync
     // always send the biggest request possible
-    strcpy(request,"sync ");
+    strcpy(request,"sync");
     send(socket_client, request, MAXREQUEST, 0);
 
-    time_t rawtime;
-    time ( &rawtime );
-    struct tm *timeinfo = localtime ( &rawtime );
+    struct dirent *dp;
+    DIR *dfd;
 
-    // send the time of the last sync, the problem is how to get it once that the software is restarted.
-    send(socket_client,(char*) &rawtime, sizeof(struct tm), 0);
+    if ((dfd = opendir(dir)) == NULL)
+    {
+        fprintf(stderr, "Can't open %s\n", dir);
+        return 0;
+    }
 
-    // number of changes
-    int numOfChanges;
-    safe_recv(socket_client, &numOfChanges, sizeof(int));
+    int numberFiles = numberOfFiles(dir);
+    int aux = htons(numberFiles);
+    send(socket_client, &aux, sizeof(int), 0);
 
-    int i;
-    for (i = 0; i < numOfChanges; i++){
+    for(i = 0; i < numberFiles; i++){
+        dp = readdir(dfd);
+        if (dp->d_type == DT_REG){
+            struct stat stbuf ;
+            sprintf( filePath, "%s/%s",dir,dp->d_name) ;
+            if( stat(filePath,&stbuf ) == -1 )
+            {
+                fprintf(stderr, "Unable to stat file: %s\n", filePath) ;
+                return;
+            }
 
-        safe_recv(socket_client, &fileName, 2*MAXNAME + 2);
-        get_file(fileName);
+            // Send name of fime
+            strcpy(request,dp->d_name);
+            send(socket_client, request, MAXREQUEST, 0);
+
+            // Send last modified time (time_t)
+            send(socket_client, &(stbuf.st_ctime), sizeof(stbuf.st_ctime), 0);
+
+            fprintf(stderr,"%s\n",dp->d_name) ;
+        }
 
     }
 
-    return;
-}
+    // receive number of files that are not sync
+    safe_recv(socket_client, &numberFiles, sizeof(int));
+    numberFiles = ntohs(numberFiles);
 
+    for(i = 0; i < numberFiles; i++){
+
+        // receive file name from server
+        safe_recv(socket_client, fileName, MAXFILENAME);
+
+        // receive file size from server
+        int size;
+        safe_recv(socket_client, &size, sizeof(int));
+        size = ntohs(size);
+
+        // create the file
+        sprintf(filePath, "%s/%s",dir,fileName) ;
+        FILE *fp = fopen(filePath, "w");
+
+        // while it didn't read all the file, keep reading
+        int acc = 0, read = 0;
+        while (acc < size)
+        {
+            // receive at most 1MB of data
+            read = safe_recv(socket_client, buf, BUFFER_SIZE);
+
+            // write the received data in the file
+            fwrite(buf, sizeof(char), read, fp);
+
+            printf("dados: %d\n", read);
+            acc += read;
+        }
+    }
+    return 0;
+}
 
 void get_file(char *file)
 {
@@ -103,9 +169,9 @@ void get_file(char *file)
     send(socket_client, request, MAXREQUEST, 0);
 
     // receive file size from server
-    uint16_t aux;
-    int sent_bytes = safe_recv(socket_client, &aux, sizeof(int));
-    int size = ntohs(size);
+    int size;
+    int sent_bytes = safe_recv(socket_client, &size, sizeof(int));
+    size = ntohs(size);
 
     // create the file
     FILE *fp = fopen(file, "w");
@@ -153,7 +219,8 @@ void send_file(char *file)
 
     int offset = 0;
 
-    while(offset < fs){
+    while(offset < fs)
+    {
         fread(buffer, sizeof(char), BUFFER_SIZE, fp);
         sent_bytes = send(socket_client, (char*) buffer, BUFFER_SIZE, 0);
         offset += sent_bytes;
@@ -167,7 +234,8 @@ void send_file(char *file)
     return;
 }
 
-void delete_file(char *file){
+void delete_file(char *file)
+{
     char* request = (char*) malloc(MAXREQUEST);
 
     // send request to delete file
@@ -248,7 +316,6 @@ void *sync_function()
 int main(int argc, char *argv[])
 {
 
-
     if(argc <= 3)
     {
         printf("call ./dropboxClient fulano endereço porta\n");
@@ -262,9 +329,14 @@ int main(int argc, char *argv[])
         printf("connection failed\n");
         //return -1;
     }
-    else{
+    else
+    {
+        strcpy(name_client, argv[1]);
+        fprintf(stderr, "name: %s\n", name_client);
         send_id(argv[1]);
     }
+
+    sync_client();
 
     running = 1;
 

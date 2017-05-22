@@ -9,8 +9,11 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <pwd.h>
+#include <dirent.h>
 
-int file_size(char *file){
+int file_size(char *file)
+{
     int fd;
     struct stat file_stat;
     fd = open(file, O_RDONLY);
@@ -53,11 +56,61 @@ user_cmd string2userCmd(char *cmd)
 }
 
 // wait until it receives s bytes
-int safe_recv(int client_fd, char *buf, int s){
-	int offset = 0;
-	while(offset < s){
-		int recv_bytes = recv(client_fd, &(buf[offset]), s, 0);
-		offset += recv_bytes;
-	}
-	return offset;
+int safe_recv(int client_fd, char *buf, int s)
+{
+    int offset = 0;
+    while(offset < s)
+    {
+        int recv_bytes = recv(client_fd, &(buf[offset]), s, 0);
+        offset += recv_bytes;
+    }
+    return offset;
+}
+
+
+int dir_exists(char *dir)
+{
+    struct stat st = {0};
+
+    if (stat(dir, &st) == -1)
+    {
+        return 0;
+    }
+    return 1;
+}
+
+char* getLinuxUser ()
+{
+    register struct passwd *pw;
+    register uid_t uid;
+    char *user = NULL;
+    uid = geteuid ();
+    pw = getpwuid (uid);
+    if (pw)
+    {
+        user = malloc(strlen(pw->pw_name + 1));
+        strcpy(user, pw->pw_name);
+        puts (user);
+        return user;
+    }
+    return -1;
+}
+
+int numberOfFiles(char *dir)
+{
+
+    int file_count = 0;
+    DIR * dirp;
+    struct dirent * entry;
+
+    dirp = opendir(dir); /* There should be error handling after this */
+    while ((entry = readdir(dirp)) != NULL)
+    {
+        if (entry->d_type == DT_REG)   /* If the entry is a regular file */
+        {
+            file_count++;
+        }
+    }
+    closedir(dirp);
+    return file_count;
 }

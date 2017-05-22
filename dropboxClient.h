@@ -16,6 +16,7 @@ pthread_t sync_thread;
 sem_t	runningRequest;
 int running;
 int socket_client; // Maybe it shouldn't be here
+char name_client[MAXNAME];
 
 void delete_file(char *file);
 
