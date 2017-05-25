@@ -90,19 +90,19 @@ int acceptLoop(){
 	return new_socket_client;
 }
 
-int read_and_write(int id_client, char *buffer){
+int read_and_write(int id_client, void* buffer){
 	int n;
 
     /* read from the socket */
 	n = read(id_client, buffer, BUFFER_SIZE);
 	if (n < 0)
 		printf("ERROR reading from socket\n");
-	//printf("Here is the message: %s", buffer);
 
-	/* write in the socket */
+	/*
 	n = write(id_client,"I got your message\n", BUFFER_SIZE);
 	if (n < 0)
 		printf("ERROR writing to socket\n");
+    */
 
 	return n;
 }
@@ -200,9 +200,12 @@ void client_handling(void *arguments){
     id_client = args->arg2;
 
     CLIENT_LIST *current_client;    //Nodo da lista contendo as infos do usuário
-    int n, device = -1;                //Device ativo para esta thread
+    int n, device = -1, n_files = 0;                //Device ativo para esta thread
     current_client = user_verify(id_user); //Verifica a existência do usuário (ou insere) no database
-    char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE], filename[MAXREQUEST];
+    time_t filetime;
+
+
 
     //printf("Client_handling check: Client registered: %s", current_client->cli.userid); //Print de verificação para ver se o treco tá indo pra lista corretamente
 
@@ -219,12 +222,19 @@ void client_handling(void *arguments){
         if (n < 0) //Esse logout não tá rolando no caso de o socket fechar do nada, isso é um PROBLEMA!!!
             client_logout(&current_client->cli, device); //Realiza o logout
 
-
         /*
         Fazer aqui: tratamento das requisições do usuário.
         */
 
-        if (strcmp(buffer, "logout\n") == 0) { //Solicitação de Logout
+        /*if (strcmp(buffer, "sync\n") == 0) { //Solicitação de Sincronização (sync_client())
+
+            printf("Received: sync_client\n");
+            read_and_write(id_client, &n_files);
+            read_and_write(id_client, filename); //Recebe nome do arquivo
+            read_and_write(id_client, filetime); //Recebe a última modificação
+
+
+        }else*/  if (strcmp(buffer, "logout\n") == 0) { //Solicitação de Logout
             client_logout(&current_client->cli, device); //Realiza o logout
             close(id_client);
             pthread_exit(0);

@@ -15,6 +15,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <netdb.h>
 
 #include <pthread.h>
 #include <linux/inotify.h>
@@ -29,7 +30,9 @@ int connect_server(char *host, int port)
 {
     //int socket_client;
     struct sockaddr_in socket_server;
+    struct hostent *server;
 
+    server = gethostbyname(host);
     socket_client = socket(AF_INET , SOCK_STREAM , 0);
 
     if (socket_client == -1)
@@ -38,7 +41,7 @@ int connect_server(char *host, int port)
         return -1;
     }
 
-    socket_server.sin_addr.s_addr = inet_addr(host);
+    socket_server.sin_addr = *((struct in_addr *)server->h_addr);
     socket_server.sin_family = AF_INET;
     socket_server.sin_port = htons( port );
 

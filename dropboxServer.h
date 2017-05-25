@@ -45,7 +45,7 @@ CLIENT_LIST* searchInClientList(CLIENT nodo);
 //Funções
 int connect_client();
 int acceptLoop();
-int read_and_write(int id_cliente, char *buffer);
+int read_and_write(int id_cliente, void* buffer);
 
 // Variáveis
 CLIENT_LIST *clientLst_ = NULL; //lista global de clientes
