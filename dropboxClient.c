@@ -64,7 +64,8 @@ void close_connection()
 
 int sync_client()
 {
-    char dir[100] = "/home/";
+    return 1;
+    char dir[100] = "/home/grad/";
     char *user; // nome do usuario linux
     int i;
     char buf[BUFFER_SIZE]; //buffer 1MG
@@ -74,13 +75,15 @@ int sync_client()
 
     user = getLinuxUser();
     strcat(dir, user);
-    strcat(dir, "/sync_dir_");
+    strcat(dir, "/Documents/sync_dir_");
     strcat(dir, name_client);
 
     if( !dir_exists (dir) )
     {
         mkdir(dir, 0777);
     }
+
+    strcat(dropboxDir_, dir);
 
     // send request to sync
     // always send the biggest request possible
@@ -111,9 +114,9 @@ int sync_client()
                 return;
             }
 
-            // Send name of fime
+            // Send name of file
             strcpy(request,dp->d_name);
-            send(socket_client, request, MAXREQUEST, 0);
+            send(socket_client, request, MAXNAME, 0);
 
             // Send last modified time (time_t)
             send(socket_client, &(stbuf.st_ctime), sizeof(stbuf.st_ctime), 0);
@@ -174,9 +177,7 @@ void get_file(char *file)
     // receive file size from server
     int size;
     int sent_bytes = safe_recv(socket_client, &size, sizeof(int));
-    fprintf(stderr, "size antes: %d\n",size);
     size = ntohs(size);
-    fprintf(stderr, "size depois: %d\n",size);
 
     // create the file
     FILE *fp = fopen(file, "w");
@@ -214,9 +215,9 @@ void send_file(char *file)
 
     // get file size and send it to server
     int fs = file_size(file);
-    fs = htons(fs);
+    int aux = htons(fs);
 
-    int sent_bytes = send(socket_client, &fs, sizeof(int), 0);
+    int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
 
     printf("%d %d \n", sent_bytes, fs);
 
@@ -276,7 +277,7 @@ void *sync_function()
     {
         printf("INOTIFY not initializated\n");
     }
-    watch = inotify_add_watch( guard, "sync_dir_gvdambros", IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY | IN_CREATE | IN_DELETE );
+    watch = inotify_add_watch( guard, dropboxDir_, IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY | IN_CREATE | IN_DELETE );
 
     // Setting non-blocking read for guard
     int flags = fcntl(guard, F_GETFL, 0);
@@ -335,7 +336,7 @@ int main(int argc, char *argv[])
     if( connect_server(argv[2], atoi( argv[3] )) < 0)
     {
         printf("connection failed\n");
-        //return -1;
+        return -1;
     }
     else
     {
@@ -351,7 +352,7 @@ int main(int argc, char *argv[])
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
 
-    char cmd_line[MAXCMD + 2*MAXNAME + 2] = "";
+    char cmd_line[MAXREQUEST] = "";
     user_cmd userCmd;
 
     do
@@ -381,9 +382,9 @@ int main(int argc, char *argv[])
             printf("Get Sync DIR\n");
 
         }
-        else if(strcmp(userCmd.cmd, "exit"))
+        else if(!strcmp(userCmd.cmd, "exit"))
         {
-            send(socket_client, request, MAXREQUEST, 0);
+            send(socket_client, cmd_line, MAXREQUEST, 0);
         }
 
     }

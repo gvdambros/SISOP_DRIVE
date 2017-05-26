@@ -16,6 +16,10 @@ dropboxServer.o: dropboxServer.c
 dropboxUtil.o: dropboxUtil.c
 	gcc -c dropboxUtil.c
 
+##
+
+all: server client
+
 ## make clean
 clean:
 	rm *~ *.o client server

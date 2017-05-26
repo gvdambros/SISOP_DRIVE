@@ -242,24 +242,33 @@ void client_handling(void *arguments)
         /*
         Fazer aqui: tratamento das requisições do usuário.
         */
-
+        fprintf(stderr, "request: %s\n",request);
         user_cmd commandLine = string2userCmd(request);
 
         if (strcmp(commandLine.cmd, "sync") == 0)   //Solicitação de Sincronização (sync_client())
         {
+            fprintf(stderr, "sync file...\n");
 
-            printf("Received: sync_client\n");
+            int numberFiles, i = 0;
+            safe_recv(id_client, &numberFiles, sizeof(int));
+            numberFiles = ntohs(numberFiles);
+
+            for(i = 0; i < numberFiles; i++){
+               safe_recv(id_client, &filename, MAXNAME);
+
+            }
+
+
+            fprintf(stderr, "sync file...\n");
 
         }
-        else if (strcmp(commandLine.cmd, "download") == 0)    //Solicitação de Logout
-        {
+        else if (strcmp(commandLine.cmd, "download") == 0) {
             fprintf(stderr, "download file...\n");
             //int fs = file_size(commandLine.param);
             int fs = file_size("a.txt");
+            int aux = htons(fs);
 
-            fs = htons(fs);
-
-            send(id_client, &fs, sizeof(int), 0);
+            send(id_client, &aux, sizeof(int), 0);
             // send all the content at once to the server
 
             // FILE *fp = fopen(commandLine.param, "r");
@@ -276,14 +285,11 @@ void client_handling(void *arguments)
 
             fclose(fp);
             fprintf(stderr, "download done\n");
-        }
-        else if (strcmp(commandLine.cmd, "upload") == 0)
-        {
+        } else if (strcmp(commandLine.cmd, "upload") == 0) {
             fprintf(stderr, "upload file...\n");
             //int fs = file_size(commandLine.param);
 
             int fs;
-
             safe_recv(id_client, &fs, sizeof(int));
 
             fprintf(stderr, "sa %d\n",fs);
@@ -309,9 +315,18 @@ void client_handling(void *arguments)
 
             fclose(fp);
             fprintf(stderr, "upload done\n");
-        }
-        else if (strcmp(buffer, "exit") == 0)   //Solicitação de Logout
+        } else if (strcmp(commandLine.cmd, "delete") == 0)
         {
+            fprintf(stderr, "delete file...\n");
+
+            //remove(commandLine.param);
+            remove("a.txt");
+
+            fprintf(stderr, "delete done\n");
+        }
+        else if (strcmp(commandLine.cmd, "exit") == 0)
+        {
+            fprintf(stderr, "exiting...\n");
             client_logout(&current_client->cli, device); //Realiza o logout
             close(id_client);
             pthread_exit(0);

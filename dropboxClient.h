@@ -20,6 +20,8 @@ char name_client[MAXNAME];
 
 void delete_file(char *file);
 
+char dropboxDir_[200];
+
 // ADDED STUFF
 
 
