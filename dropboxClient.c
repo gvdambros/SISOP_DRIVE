@@ -22,7 +22,7 @@
 #define EVENT_SIZE  ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
 
-#define BUFFER_SIZE 10
+#define BUFFER_SIZE 1024*1024
 
 #include <time.h>
 
@@ -174,7 +174,9 @@ void get_file(char *file)
     // receive file size from server
     int size;
     int sent_bytes = safe_recv(socket_client, &size, sizeof(int));
+    fprintf(stderr, "size antes: %d\n",size);
     size = ntohs(size);
+    fprintf(stderr, "size depois: %d\n",size);
 
     // create the file
     FILE *fp = fopen(file, "w");
@@ -184,7 +186,7 @@ void get_file(char *file)
     while (acc < size)
     {
         // receive at most 1MB of data
-        int read = safe_recv(socket_client, buf, BUFFER_SIZE);
+        int read = recv(socket_client, buf, BUFFER_SIZE, 0);
 
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
@@ -193,12 +195,13 @@ void get_file(char *file)
         acc += read;
     }
 
+    fclose(fp);
+
     return;
 }
 
 void send_file(char *file)
 {
-
     char* request = (char*) malloc(MAXREQUEST);
 
     sem_wait(&runningRequest);
@@ -211,8 +214,9 @@ void send_file(char *file)
 
     // get file size and send it to server
     int fs = file_size(file);
-    int aux = htons(fs);
-    int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
+    fs = htons(fs);
+
+    int sent_bytes = send(socket_client, &fs, sizeof(int), 0);
 
     printf("%d %d \n", sent_bytes, fs);
 
@@ -224,13 +228,14 @@ void send_file(char *file)
 
     while(offset < fs)
     {
-        fread(buffer, sizeof(char), BUFFER_SIZE, fp);
-        sent_bytes = send(socket_client, (char*) buffer, BUFFER_SIZE, 0);
+        int bytes_read = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+        sent_bytes = send(socket_client, (char*) buffer, bytes_read, 0);
         offset += sent_bytes;
-        sleep(1);
     }
 
     printf("sending done\n");
+
+    fclose(fp);
 
     sem_post(&runningRequest);
 
@@ -357,10 +362,11 @@ int main(int argc, char *argv[])
         if(!strcmp(userCmd.cmd, "upload"))
         {
             printf("Upload\n");
-            send_file("a.txt");
+            send_file(userCmd.param);
         }
         else if(!strcmp(userCmd.cmd, "download"))
         {
+            get_file(userCmd.param);
             printf("Download\n");
 
         }
@@ -377,7 +383,7 @@ int main(int argc, char *argv[])
         }
         else if(strcmp(userCmd.cmd, "exit"))
         {
-            printf("Invalid command\n");
+            send(socket_client, request, MAXREQUEST, 0);
         }
 
     }

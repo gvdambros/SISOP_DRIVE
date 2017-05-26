@@ -3,9 +3,9 @@
 
 #include "dropboxUtil.h"
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024*1024
 
-#define PORT 4000 //temporario
+int port_ = 4000;
 
 typedef struct file_info{
     char name[MAXNAME];
