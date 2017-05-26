@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include "dropboxServer.h"
@@ -236,9 +237,6 @@ void client_handling(void *arguments)
         safe_recv(id_client, request, MAXREQUEST);
         fprintf(stderr, "%s\n", request);
 
-        if (n < 0) //Esse logout não tá rolando no caso de o socket fechar do nada, isso é um PROBLEMA!!!
-            client_logout(&current_client->cli, device); //Realiza o logout
-
         /*
         Fazer aqui: tratamento das requisições do usuário.
         */
@@ -249,14 +247,26 @@ void client_handling(void *arguments)
         {
             fprintf(stderr, "sync file...\n");
 
-            int numberFiles, i = 0;
-            safe_recv(id_client, &numberFiles, sizeof(int));
-            numberFiles = ntohs(numberFiles);
+            /*int numberFilesClient, numberFilesServer = numberOfFiles("/test"), i = 0, j = 0;
+            int bitMap[numberFilesServer];
 
-            for(i = 0; i < numberFiles; i++){
+            safe_recv(id_client, &numberFilesClient, sizeof(int));
+            numberFilesClient = ntohs(numberFilesClient);
+
+            timer_t lastModified;
+            for(i = 0; i < numberFilesClient; i++){
                safe_recv(id_client, &filename, MAXNAME);
+               safe_recv(id_client, &lastModified, sizeof(lastModified));
 
-            }
+               while(j < MAXFILES && !strcmp(filename, current_client->cli.file_info[j].name));
+               if(strcmp(filename, current_client->cli.file_info[j].name)){
+
+                    if(!difftime(lastModified, current_client->cli.file_info[j].last_modified )){
+
+                    }
+               }
+
+            }*/
 
 
             fprintf(stderr, "sync file...\n");
@@ -270,6 +280,10 @@ void client_handling(void *arguments)
 
             send(id_client, &aux, sizeof(int), 0);
             // send all the content at once to the server
+
+            struct stat stbuf;
+            stat("a.txt", &stbuf );
+            send(id_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
 
             // FILE *fp = fopen(commandLine.param, "r");
             FILE *fp = fopen("a.txt", "r");
@@ -291,10 +305,11 @@ void client_handling(void *arguments)
 
             int fs;
             safe_recv(id_client, &fs, sizeof(int));
-
-            fprintf(stderr, "sa %d\n",fs);
             fs = htons(fs);
-            fprintf(stderr, "sd %d\n",fs);
+
+            // Send last modified time (time_t)
+            time_t lm;
+            safe_recv(id_client, &lm, sizeof(lm));
 
             // FILE *fp = fopen(commandLine.param, "r");
             FILE *fp = fopen("a.txt", "w");

@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/sendfile.h>
 
+#include <utime.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <netdb.h>
@@ -106,7 +107,7 @@ int sync_client()
     for(i = 0; i < numberFiles; i++){
         dp = readdir(dfd);
         if (dp->d_type == DT_REG){
-            struct stat stbuf ;
+            struct stat stbuf;
             sprintf( filePath, "%s/%s",dir,dp->d_name) ;
             if( stat(filePath,&stbuf ) == -1 )
             {
@@ -119,7 +120,7 @@ int sync_client()
             send(socket_client, request, MAXNAME, 0);
 
             // Send last modified time (time_t)
-            send(socket_client, &(stbuf.st_ctime), sizeof(stbuf.st_ctime), 0);
+            send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
 
             fprintf(stderr,"%s\n",dp->d_name) ;
         }
@@ -179,6 +180,10 @@ void get_file(char *file)
     int sent_bytes = safe_recv(socket_client, &size, sizeof(int));
     size = ntohs(size);
 
+    // Send last modified time (time_t)
+    time_t lm;
+    safe_recv(socket_client, &lm, sizeof(lm));
+
     // create the file
     FILE *fp = fopen(file, "w");
 
@@ -195,6 +200,8 @@ void get_file(char *file)
         printf("dados: %d\n", read);
         acc += read;
     }
+
+
 
     fclose(fp);
 
@@ -216,12 +223,13 @@ void send_file(char *file)
     // get file size and send it to server
     int fs = file_size(file);
     int aux = htons(fs);
-
     int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
 
-    printf("%d %d \n", sent_bytes, fs);
+    struct stat stbuf;
+    stat(file, &stbuf );
+    send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
 
-    // send all the content at once to the server
+
     FILE *fp = fopen(file, "r");
     char buffer[BUFFER_SIZE];
 
