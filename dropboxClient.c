@@ -65,7 +65,6 @@ void close_connection()
 
 int sync_client()
 {
-    return 1;
     char dir[100] = "/home/grad/";
     char *user; // nome do usuario linux
     int i;
@@ -84,7 +83,9 @@ int sync_client()
         mkdir(dir, 0777);
     }
 
-    strcat(dropboxDir_, dir);
+    strcpy(dropboxDir_, dir);
+
+    return 1;
 
     // send request to sync
     // always send the biggest request possible
@@ -180,6 +181,8 @@ void get_file(char *file)
     int sent_bytes = safe_recv(socket_client, &size, sizeof(int));
     size = ntohs(size);
 
+    fprintf(stderr, "size: %d\n", size);
+
     // Send last modified time (time_t)
     time_t lm;
     safe_recv(socket_client, &lm, sizeof(lm));
@@ -208,6 +211,27 @@ void get_file(char *file)
     return;
 }
 
+void list_files()
+{
+    DIR *mydir;
+    struct dirent *myfile;
+    struct stat mystat;
+
+    if ((mydir = opendir(dropboxDir_)) == NULL)
+    {
+        fprintf(stderr, "Can't open %s\n", dropboxDir_);
+        return 0;
+    }
+
+    while((myfile = readdir(mydir)) != NULL)
+    {
+        stat(myfile->d_name, &mystat);
+        printf("%d",mystat.st_size);
+        printf(" %s\n", myfile->d_name);
+    }
+    closedir(mydir);
+}
+
 void send_file(char *file)
 {
     char* request = (char*) malloc(MAXREQUEST);
@@ -224,11 +248,10 @@ void send_file(char *file)
     int fs = file_size(file);
     int aux = htons(fs);
     int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
-
+    //ERRO NO STAT
     struct stat stbuf;
     stat(file, &stbuf );
     send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
-
 
     FILE *fp = fopen(file, "r");
     char buffer[BUFFER_SIZE];
@@ -294,7 +317,7 @@ void *sync_function()
     while(running)
     {
 
-        sleep(1);
+        sleep(10);
 
         if( (numOfChanges = read( guard, buffer, EVENT_BUF_LEN )) < 0)
         {
@@ -381,7 +404,7 @@ int main(int argc, char *argv[])
         }
         else if(!strcmp(userCmd.cmd, "list"))
         {
-            sync_client();
+            list_files();
             printf("List\n");
 
         }

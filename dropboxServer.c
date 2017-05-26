@@ -215,8 +215,9 @@ void client_handling(void *arguments)
     CLIENT_LIST *current_client;    //Nodo da lista contendo as infos do usuário
     int n, device = -1, n_files = 0;                //Device ativo para esta thread
     current_client = user_verify(id_user); //Verifica a existência do usuário (ou insere) no database
-    char buffer[BUFFER_SIZE], filename[MAXREQUEST], request[MAXNAME];
+    char buffer[BUFFER_SIZE], filename[MAXREQUEST], request[MAXNAME], dir[300] = "/home/grad/", pathFile[300];
     time_t filetime;
+    char *user;
 
     //printf("Client_handling check: Client registered: %s", current_client->cli.userid); //Print de verificação para ver se o treco tá indo pra lista corretamente
 
@@ -231,12 +232,29 @@ void client_handling(void *arguments)
         pthread_exit(0);    //Se não for possível, encerra a thread
     }
 
+    user = getLinuxUser();
+    strcat(dir, user);
+    strcat(dir, "/Documents/server_dir_");
+    strcat(dir, id_user);
+    strcat(dir, "/");
+
+    if( !dir_exists (dir) )
+    {
+        fprintf(stderr, "Criou diretorio em %s\n", dir);
+        mkdir(dir, 0777);
+    }
+
+
+    fprintf(stderr, "dir: %s path: %s\n", dir, pathFile);
+
+
     while (running_)
     {
 
         safe_recv(id_client, request, MAXREQUEST);
         fprintf(stderr, "%s\n", request);
 
+        fprintf(stderr, "dir: %s path: %s\n", dir, pathFile);
         /*
         Fazer aqui: tratamento das requisições do usuário.
         */
@@ -274,19 +292,24 @@ void client_handling(void *arguments)
         }
         else if (strcmp(commandLine.cmd, "download") == 0) {
             fprintf(stderr, "download file...\n");
+
+            strcpy(pathFile, dir);
+            strcat(pathFile, commandLine.param);
+            fprintf(stderr, "dir: %s path: %s\n", dir, pathFile);
+
             //int fs = file_size(commandLine.param);
-            int fs = file_size("a.txt");
+            int fs = file_size(pathFile);
             int aux = htons(fs);
 
             send(id_client, &aux, sizeof(int), 0);
             // send all the content at once to the server
 
             struct stat stbuf;
-            stat("a.txt", &stbuf );
+            stat(pathFile, &stbuf );
             send(id_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
 
-            // FILE *fp = fopen(commandLine.param, "r");
-            FILE *fp = fopen("a.txt", "r");
+            FILE *fp = fopen(pathFile, "r");
+            //FILE *fp = fopen("a.txt", "r");
 
             int sent_bytes, offset = 0;
 
@@ -311,8 +334,11 @@ void client_handling(void *arguments)
             time_t lm;
             safe_recv(id_client, &lm, sizeof(lm));
 
-            // FILE *fp = fopen(commandLine.param, "r");
-            FILE *fp = fopen("a.txt", "w");
+            strcat(pathFile, dir);
+            strcat(pathFile, commandLine.param);
+
+            FILE *fp = fopen(pathFile, "w");
+            //FILE *fp = fopen("a.txt", "w");
 
             int offset = 0;
 

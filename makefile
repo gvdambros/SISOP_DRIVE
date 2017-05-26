@@ -12,7 +12,7 @@ dropboxUtil.o: dropboxUtil.c
 server: dropboxServer.o dropboxUtil.o
 	gcc dropboxServer.o dropboxUtil.o -o server -pthread -w
 dropboxServer.o: dropboxServer.c
-	gcc -c dropboxServer.c -w
+	gcc -c dropboxServer.c
 dropboxUtil.o: dropboxUtil.c
 	gcc -c dropboxUtil.c 
 

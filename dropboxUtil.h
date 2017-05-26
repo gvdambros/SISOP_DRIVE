@@ -9,8 +9,8 @@
 #define MAXFILENAME 2*MAXNAME+2
 
 typedef struct command{
-    char *cmd[MAXCMD + 1];
-    char *param[MAXNAME*2 + 1];
+    char cmd[MAXCMD + 1];
+    char param[MAXNAME*2 + 1];
 } user_cmd;
 
 int safe_recv(int client_fd, char *buf, int s);
