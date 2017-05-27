@@ -65,18 +65,22 @@ void close_connection()
 
 int sync_client()
 {
-    char dir[100] = "/home/grad/";
+    char *dir, *pathFile = (char*) malloc(200);;
     char *user; // nome do usuario linux
     int i;
     char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
     char* fileName = (char*) malloc( MAXFILENAME );
-    char* filePath = (char*) malloc(200);
+
 
     user = getLinuxUser();
-    strcat(dir, user);
-    strcat(dir, "/Documents/sync_dir_");
-    strcat(dir, name_client);
+
+    dir = malloc(200);
+    dir = strcpy(dir, "/home/");
+    dir = strcat(dir, user);
+    dir = strcat(dir, "/Documents/sync_dir_");
+    dir = strcat(dir, name_client);
+    dir = strcat(dir, "/");
 
     if( !dir_exists (dir) )
     {
@@ -101,7 +105,7 @@ int sync_client()
         return 0;
     }
 
-    int numberFiles = numberOfFiles(dir);
+    int numberFiles = numberOfFilesInDir(dir);
     int aux = htons(numberFiles);
     send(socket_client, &aux, sizeof(int), 0);
 
@@ -109,10 +113,10 @@ int sync_client()
         dp = readdir(dfd);
         if (dp->d_type == DT_REG){
             struct stat stbuf;
-            sprintf( filePath, "%s/%s",dir,dp->d_name) ;
-            if( stat(filePath,&stbuf ) == -1 )
+            sprintf( pathFile, "%s/%s",dir,dp->d_name) ;
+            if( stat(pathFile,&stbuf ) == -1 )
             {
-                fprintf(stderr, "Unable to stat file: %s\n", filePath) ;
+                fprintf(stderr, "Unable to stat file: %s\n", pathFile) ;
                 return;
             }
 
@@ -142,16 +146,21 @@ int sync_client()
         safe_recv(socket_client, &size, sizeof(int));
         size = ntohs(size);
 
-        // create the file
-        sprintf(filePath, "%s/%s",dir,fileName) ;
-        FILE *fp = fopen(filePath, "w");
+        pathFile = strcpy(pathFile, dir);
+        pathFile = strcat(pathFile, fileName);
+
+        FILE *fp = fopen(pathFile, "w");
+
+        struct utimbuf new_times;
+
+        utime(pathFile, &new_times);
 
         // while it didn't read all the file, keep reading
         int acc = 0, read = 0;
         while (acc < size)
         {
             // receive at most 1MB of data
-            read = safe_recv(socket_client, buf, BUFFER_SIZE);
+            read = recv(socket_client, buf, BUFFER_SIZE, 0);
 
             // write the received data in the file
             fwrite(buf, sizeof(char), read, fp);
@@ -235,8 +244,19 @@ void list_files()
 void send_file(char *file)
 {
     char* request = (char*) malloc(MAXREQUEST);
+    int fs, aux, sent_bytes, offset = 0;
+    char buffer[BUFFER_SIZE];
 
     sem_wait(&runningRequest);
+
+    if((fs = file_size(file)) < 0){
+        return -1;
+    }
+
+    time_t *lastModified;
+    if( (lastModified = file_lastModifier(file)) == NULL){
+        return -1;
+    }
 
     // send request to upload of file
     // always send the biggest request possible
@@ -244,19 +264,16 @@ void send_file(char *file)
     strcat(request, file);
     send(socket_client, request, MAXREQUEST, 0);
 
-    // get file size and send it to server
-    int fs = file_size(file);
-    int aux = htons(fs);
-    int sent_bytes = send(socket_client, &aux, sizeof(int), 0);
-    //ERRO NO STAT
-    struct stat stbuf;
-    stat(file, &stbuf );
-    send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
+    // send file size
+    aux = htons(fs);
+    send(socket_client, &aux, sizeof(int), 0);
+
+    // send last modified
+    send(socket_client, lastModified, sizeof(time_t), 0);
 
     FILE *fp = fopen(file, "r");
-    char buffer[BUFFER_SIZE];
 
-    int offset = 0;
+    fprintf(stderr, "size: %d\n", fs);
 
     while(offset < fs)
     {

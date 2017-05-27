@@ -8,6 +8,9 @@
 #define MAXDEVICES 2
 #define MAXFILENAME 2*MAXNAME+2
 
+#include <time.h>
+
+
 typedef struct command{
     char cmd[MAXCMD + 1];
     char param[MAXNAME*2 + 1];
@@ -15,9 +18,10 @@ typedef struct command{
 
 int safe_recv(int client_fd, char *buf, int s);
 int file_size(char *file);
+time_t* file_lastModifier(char *file);
 user_cmd string2userCmd(char *cmd);
 int dir_exists(char *dir);
 char* getLinuxUser ();
-int numberOfFiles(char *dir);
+int numberOfFilesInDir(char *dir);
 
 #endif // DROPBOXUTIL_H_INCLUDED

@@ -14,25 +14,26 @@
 
 int file_size(char *file)
 {
-    int fd;
     struct stat file_stat;
-    fd = open(file, O_RDONLY);
 
-    if (fd == -1)
+    if (stat(file, &file_stat) < 0)
     {
-        printf("Error opening file --> %s\n", file);
+        printf("Error fstat --> %s\n", file);
         return -1;
     }
 
-    if (fstat(fd, &file_stat) < 0)
-    {
-        printf("Error fstat --> %s\n", file);
-        return -2;
-    }
-
-    close(fd);
-
     return file_stat.st_size;
+}
+
+time_t* file_lastModifier(char *file){
+    time_t *t = (time_t*) malloc(sizeof(time_t));
+    struct stat stbuf;
+    if(stat(file, &stbuf) < 0){
+        printf("Error fstat --> %s\n", file);
+        return 0;
+    }
+    (*t) = stbuf.st_mtime;
+    return t;
 }
 
 user_cmd string2userCmd(char *cmd)
@@ -96,7 +97,7 @@ char* getLinuxUser ()
     return -1;
 }
 
-int numberOfFiles(char *dir)
+int numberOfFilesInDir(char *dir)
 {
 
     int file_count = 0;
