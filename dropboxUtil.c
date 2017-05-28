@@ -68,6 +68,17 @@ int safe_recv(int client_fd, char *buf, int s)
     return offset;
 }
 
+int safe_recvINT(int client_fd, int *buf){
+    safe_recv(client_fd, buf, sizeof(int));
+    (*buf) = ntohs(*buf);
+}
+
+
+int safe_sendINT(int client_fd, int *buf){
+    int aux = htons(*buf);
+    send(client_fd, &aux, sizeof(int), 0);
+}
+
 
 int dir_exists(char *dir)
 {

@@ -89,8 +89,6 @@ int sync_client()
 
     strcpy(dropboxDir_, dir);
 
-    return 1;
-
     // send request to sync
     // always send the biggest request possible
     strcpy(request,"sync");
@@ -106,8 +104,7 @@ int sync_client()
     }
 
     int numberFiles = numberOfFilesInDir(dir);
-    int aux = htons(numberFiles);
-    send(socket_client, &aux, sizeof(int), 0);
+    safe_sendINT(socket_client, &numberFiles);
 
     for(i = 0; i < numberFiles; i++){
         dp = readdir(dfd);
@@ -122,7 +119,7 @@ int sync_client()
 
             // Send name of file
             strcpy(request,dp->d_name);
-            send(socket_client, request, MAXNAME, 0);
+            send(socket_client, request, MAXFILENAME, 0);
 
             // Send last modified time (time_t)
             send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
@@ -133,8 +130,10 @@ int sync_client()
     }
 
     // receive number of files that are not sync
-    safe_recv(socket_client, &numberFiles, sizeof(int));
-    numberFiles = ntohs(numberFiles);
+    safe_recvINT(socket_client, &numberFiles);
+
+    fprintf(stderr, "%d vao ser recebidos\n",numberFiles );
+
 
     for(i = 0; i < numberFiles; i++){
 
@@ -143,17 +142,18 @@ int sync_client()
 
         // receive file size from server
         int size;
-        safe_recv(socket_client, &size, sizeof(int));
-        size = ntohs(size);
+        safe_recvINT(socket_client, &size);
+
+        // receive last modified time (time_t)
+        time_t lm;
+        safe_recv(socket_client, &lm, sizeof(time_t));
 
         pathFile = strcpy(pathFile, dir);
         pathFile = strcat(pathFile, fileName);
 
         FILE *fp = fopen(pathFile, "w");
 
-        struct utimbuf new_times;
-
-        utime(pathFile, &new_times);
+        fprintf(stderr, "recebendo %s %d bytes\n", fileName, size);
 
         // while it didn't read all the file, keep reading
         int acc = 0, read = 0;
@@ -168,6 +168,13 @@ int sync_client()
             printf("dados: %d\n", read);
             acc += read;
         }
+
+        fclose(fp);
+
+        struct utimbuf new_times;
+        new_times.actime = time(NULL);
+        new_times.modtime = lm;    /* set mtime to current time */
+        utime(pathFile, &new_times);
     }
     return 0;
 }
@@ -187,12 +194,11 @@ void get_file(char *file)
 
     // receive file size from server
     int size;
-    int sent_bytes = safe_recv(socket_client, &size, sizeof(int));
-    size = ntohs(size);
+    int sent_bytes = safe_recvINT(socket_client, &size);
 
     fprintf(stderr, "size: %d\n", size);
 
-    // Send last modified time (time_t)
+    // receive last modified time (time_t)
     time_t lm;
     safe_recv(socket_client, &lm, sizeof(lm));
 
@@ -213,9 +219,12 @@ void get_file(char *file)
         acc += read;
     }
 
-
-
     fclose(fp);
+
+    struct utimbuf new_times;
+    new_times.actime = time(NULL);
+    new_times.modtime = lm;    /* set mtime to current time */
+    utime(file, &new_times);
 
     return;
 }
@@ -265,8 +274,7 @@ void send_file(char *file)
     send(socket_client, request, MAXREQUEST, 0);
 
     // send file size
-    aux = htons(fs);
-    send(socket_client, &aux, sizeof(int), 0);
+    safe_sendINT(socket_client, &fs);
 
     // send last modified
     send(socket_client, lastModified, sizeof(time_t), 0);

@@ -17,6 +17,9 @@ typedef struct command{
 } user_cmd;
 
 int safe_recv(int client_fd, char *buf, int s);
+int safe_recvINT(int client_fd, int *buf);
+int safe_sendINT(int client_fd, int *buf);
+
 int file_size(char *file);
 time_t* file_lastModifier(char *file);
 user_cmd string2userCmd(char *cmd);

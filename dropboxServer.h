@@ -8,9 +8,9 @@
 int port_ = 4000;
 
 typedef struct file_info{
-    char name[MAXNAME];
-    char extension[MAXNAME];
-    char last_modified[MAXNAME];
+    char name[MAXFILENAME];
+    //char extension[MAXNAME];
+    //char last_modified[MAXNAME];
     time_t time_lastModified;
     int size;
 } FILE_INFO;

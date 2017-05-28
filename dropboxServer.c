@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include "dropboxServer.h"
 #include <pthread.h>
+#include <time.h>
+#include <utime.h>
 
 #define on_error(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr); exit(1); }
 
@@ -133,7 +135,7 @@ CLIENT_LIST* user_verify(char *id_user)
         new_user.devices[0] = 0;
         new_user.devices[1] = 0;
         new_user.logged_in = 0;
-        initFilesOfClient(&new_user);
+        initFiles_ClientDir(&new_user);
         if (insertList(new_user) < 0)
         {
             printf("Client unsuccessfully registered\n");
@@ -247,11 +249,6 @@ void client_handling(void *arguments)
     while (running_)
     {
         safe_recv(id_client, request, MAXREQUEST);
-        fprintf(stderr, "%s\n", request);
-
-        /*
-        Fazer aqui: tratamento das requisições do usuário.
-        */
         fprintf(stderr, "request: %s\n",request);
         user_cmd commandLine = string2userCmd(request);
 
@@ -259,63 +256,113 @@ void client_handling(void *arguments)
         {
             fprintf(stderr, "sync file...\n");
 
-            /*
-            int numberFilesClient, numberFilesServer = numberOfFiles(dir), i, j = 0, count = 0;
-            int bitMap[numberFilesServer];
+            int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(current_client->cli), i, j, count = 0;
+            int *bitMap = calloc(MAXFILES, sizeof(int));
+            // bitMap[i] == 0 -> espaço vazio
+            // bitMap[i] == 1 -> arquivo synx
+            // bitMap[i] == 2 -> arquivo não existe no usuario ou não sync
 
-            safe_recv(id_client, &numberFilesClient, sizeof(int));
-            numberFilesClient = ntohs(numberFilesClient);
+            for(i = 0; i < MAXFILES; i++){
+                if(current_client->cli.file_info[i].size > 0){
+                    bitMap[i] = 2;
+                }
+            }
+
+            safe_recvINT(id_client, &numberFilesClient);
+
+            fprintf(stderr, "O usuario tem %d arquivos\n", numberFilesClient);
 
             // Check to see which files are sync
             // bitMap keeps track of them
-            timer_t lastModified;
+            time_t lastModified;
             for(i = 0; i < numberFilesClient; i++){
-               safe_recv(id_client, &filename, MAXNAME);
+               safe_recv(id_client, &filename, MAXFILENAME);
                safe_recv(id_client, &lastModified, sizeof(lastModified));
 
-               while(j < MAXFILES && !strcmp(filename, current_client->cli.file_info[j].name));
+                fprintf(stderr, "arquivo %s\n", filename);
 
-               if(strcmp(filename, current_client->cli.file_info[j].name)){
+                // find file in the client dir
+                if( (j = findFile_ClientDir(filename)) < 0)
+                {
+                    continue;
+                }
 
-                    if(!difftime(lastModified, current_client->cli.file_info[j].last_modified )){
-                        bitMap[j] = 1;
-                        count++;
-                    }
-               }
-
+                // if the file in the user computer is sync
+                if(!difftime(lastModified, current_client->cli.file_info[j].time_lastModified ))
+                {
+                    fprintf(stderr, "arquivo %s ta sync\n", filename);
+                    bitMap[j] = 1;
+                    count++;
+                }
             }
 
+            // send number of files that are not sync
             count = numberFilesServer - count;
-            send(id_client, &count, sizeof(int), 0);
+            safe_sendINT(id_client, &count);
 
+            fprintf(stderr, "%d vao ser enviados dos %d arquivo no server\n", count, numberFilesServer);
             // send files that are not sync
-            for(i = 0; i < numberFilesServer; i++){
-                if(!bitMap[i]){
+            for(i = 0; i < MAXFILES; i++){
+                fprintf(stderr, "%d\n", bitMap[i]);
+                if(bitMap[i] == 2){
+                    strcpy(pathFile, dir);
+                    strcat(pathFile, current_client->cli.file_info[i].name);
+
+
+                    int fs = current_client->cli.file_info[i].size;
+
+                    fprintf(stderr, "enviando %s %d bytes\n", current_client->cli.file_info[i].name, fs);
+
+                    send(id_client, current_client->cli.file_info[i].name, MAXFILENAME, 0);
+                    safe_sendINT(id_client, &fs);
+                    send(id_client, &(current_client->cli.file_info[i].time_lastModified), sizeof(time_t), 0);
+
+                    FILE *fp = fopen(pathFile, "r");
+
+                    int sent_bytes, offset = 0;
+
+                    while(offset < fs)
+                    {
+                        int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+                        sent_bytes = send(id_client, (char*) buffer, bytes_send, 0);
+                        offset += sent_bytes;
+                    }
+
+                    fclose(fp);
 
                 }
             }
-            */
 
             fprintf(stderr, "sync file...\n");
 
         }
-        else if (strcmp(commandLine.cmd, "download") == 0) {
+        else if (strcmp(commandLine.cmd, "download") == 0)
+        {
+            int fs;
             fprintf(stderr, "download file...\n");
 
             strcpy(pathFile, dir);
             strcat(pathFile, commandLine.param);
             fprintf(stderr, "dir: %s path: %s\n", dir, pathFile);
 
-            //int fs = file_size(commandLine.param);
-            int fs = file_size(pathFile);
-            int aux = htons(fs);
+            int i;
 
-            send(id_client, &aux, sizeof(int), 0);
-            // send all the content at once to the server
+            if( (i = findFile_ClientDir(current_client->cli, commandLine.param)) < 0)
+            {
+                // file doens't exist in dir
+                fs = 0;
+            }
+            else
+            {
+                fprintf(stderr, "i: %d\n",i);
+                fs = current_client->cli.file_info[i].size;
+            }
 
-            struct stat stbuf;
-            stat(pathFile, &stbuf );
-            send(id_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
+            fprintf(stderr, "a %d\n", fs);
+
+            safe_sendINT(id_client, &fs);
+            send(id_client, &(current_client->cli.file_info[i].time_lastModified), sizeof(time_t), 0);
+
 
             FILE *fp = fopen(pathFile, "r");
             //FILE *fp = fopen("a.txt", "r");
@@ -331,12 +378,13 @@ void client_handling(void *arguments)
 
             fclose(fp);
             fprintf(stderr, "download done\n");
-        } else if (strcmp(commandLine.cmd, "upload") == 0) {
+        }
+        else if (strcmp(commandLine.cmd, "upload") == 0)
+        {
             fprintf(stderr, "upload file...\n");
 
             int fs;
-            safe_recv(id_client, &fs, sizeof(int));
-            fs = htons(fs);
+            safe_recvINT(id_client, &fs);
 
             // Send last modified time (time_t)
             time_t lm;
@@ -345,32 +393,45 @@ void client_handling(void *arguments)
             pathFile = strcpy(pathFile, dir);
             pathFile = strcat(pathFile, commandLine.param);
 
-            FILE *fp = fopen(pathFile, "w");
-            //FILE *fp = fopen("a.txt", "w");
+            int full = isFull_ClientDir(current_client->cli);
 
-            int full = dirOfClientIsFull(current_client->cli);
-
-            fprintf(stderr, "file size: %d\n", fs);
-
-            int acc = 0;
-            while (acc < fs)
+            if(fs)
             {
-                // receive at most 1MB of data
-                int read = recv(id_client, buffer, BUFFER_SIZE, 0);
+                FILE *fp = fopen(pathFile, "w");
 
-                // write the received data in the file
-                if(!full) fwrite(buffer, sizeof(char), read, fp);
+                fprintf(stderr, "file size: %d\n", fs);
 
-                acc += read;
+                int acc = 0;
+                while (acc < fs)
+                {
+                    // receive at most 1MB of data
+                    int read = recv(id_client, buffer, BUFFER_SIZE, 0);
+
+                    // write the received data in the file
+                    if(!full) fwrite(buffer, sizeof(char), read, fp);
+
+                    acc += read;
+                }
+
+                // if the dir was full before, delete the received file
+                // else add to the struct
+                if(full){
+                    remove(pathFile);
+                } else {
+                    addFile_ClientDir(&(current_client->cli), commandLine.param, fs, lm);
+                }
+                printFiles_ClientDir(current_client->cli);
+
+                fclose(fp);
+
+                struct utimbuf new_times;
+                new_times.actime = time(NULL);
+                new_times.modtime = lm;    /* set mtime to current time */
+                utime(pathFile, &new_times);
             }
-
-            if(!full) addFileToClient(&(current_client->cli), commandLine.param, fs, lm);
-
-            printFilesOfClient(current_client->cli);
-
-            fclose(fp);
             fprintf(stderr, "upload done\n");
-        } else if (strcmp(commandLine.cmd, "delete") == 0)
+        }
+        else if (strcmp(commandLine.cmd, "delete") == 0)
         {
             fprintf(stderr, "delete file...\n");
 
@@ -378,8 +439,8 @@ void client_handling(void *arguments)
             pathFile = strcat(pathFile, commandLine.param);
             remove(pathFile);
 
-            deleteFileToClient(&(current_client->cli), commandLine.param);
-            printFilesOfClient(current_client->cli);
+            deleteFile_ClientDir(&(current_client->cli), commandLine.param);
+            printFiles_ClientDir(current_client->cli);
 
             fprintf(stderr, "delete done\n");
         }
@@ -399,7 +460,7 @@ void client_handling(void *arguments)
     pthread_exit(0);
 }
 
-void printFilesOfClient(CLIENT client)
+void printFiles_ClientDir(CLIENT client)
 {
     int i;
     fprintf(stderr, "files of %s\n", client.userid);
@@ -413,13 +474,17 @@ void printFilesOfClient(CLIENT client)
     return;
 }
 
-int addFileToClient(CLIENT *client, char *file, int size, time_t lastModified){
-    int i = 0;
-    while(i < MAXFILES && client->file_info[i].size != -1) i++;
-    if(i == MAXFILES){
-        return -1;
+int addFile_ClientDir(CLIENT *client, char *file, int size, time_t lastModified)
+{
+    int i;
+    if( (i = findFile_ClientDir(*client, file)) < 0)
+    {
+        // If file doesn't exist
+        if((i = nextEmptySpace_ClientDir(*client)) < 0) return -1;
+
     }
 
+    fprintf(stderr, "FILE ADDED\n");
     strcpy( client->file_info[i].name, file);
     client->file_info[i].size = size;
     client->file_info[i].time_lastModified = lastModified;
@@ -427,39 +492,77 @@ int addFileToClient(CLIENT *client, char *file, int size, time_t lastModified){
     return 0;
 }
 
-int deleteFileToClient(CLIENT *client, char *file){
+int nextEmptySpace_ClientDir(CLIENT client)
+{
+    int i = 0;
+    while(i < MAXFILES && client.file_info[i].size != -1) i++;
+    if(i == MAXFILES)
+    {
+        // if dir is full
+        return -1;
+    }
+    return i;
+
+}
+
+int findFile_ClientDir(CLIENT client, char *file)
+{
+    int i = 0;
+    while(i < MAXFILES && strcmp(client.file_info[i].name, file))
+    {
+        fprintf(stderr, "file different %s \n",client.file_info[i].name );
+        i++;
+    }
+    if(i >= MAXFILES)
+    {
+        return -1;
+    }
+    return i;
+}
+
+int deleteFile_ClientDir(CLIENT *client, char *file)
+{
     int i = 0;
     while(i < MAXFILES && !strcmp(client->file_info[i].name, file))  i++;
-    if(i == MAXFILES){
+    if(i == MAXFILES)
+    {
         return -1;
     }
     client->file_info[i].size = -1;
     return 0;
 }
 
-int numberOfFilesOfClient(CLIENT client){
+int numberOfFiles_ClientDir(CLIENT client)
+{
     int i = 0, count = 0;
-    for(i = 0; i < MAXFILES; i ++){
-        if(client.file_info[i].size != -1){
+    for(i = 0; i < MAXFILES; i ++)
+    {
+        if(client.file_info[i].size != -1)
+        {
             count++;
         }
     }
     return count;
 }
 
-int dirOfClientIsFull(CLIENT client){
-    int i = 0;
-    for(i = 0; i < MAXFILES; i ++){
-        if(client.file_info[i].size != -1){
+int isFull_ClientDir(CLIENT client)
+{
+    int i;
+    for(i = 0; i < MAXFILES; i ++)
+    {
+        if(client.file_info[i].size == -1)
+        {
             return 0;
         }
     }
     return 1;
 }
 
-void initFilesOfClient(CLIENT *client){
+void initFiles_ClientDir(CLIENT *client)
+{
     int i;
-    for(i = 0; i < MAXFILES; i++){
+    for(i = 0; i < MAXFILES; i++)
+    {
         client->file_info[i].size = -1;
     }
     return;
