@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <dirent.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -574,6 +575,83 @@ void sync_server()
 
 }
 
+void initServer()
+{
+    char *user, *pathFile, *dir_prefix, c;
+    pathFile = malloc(200);
+    DIR *serverdir;
+    struct dirent *mydir;
+    user = getLinuxUser();
+    pathFile = strcpy(pathFile, "/home/");
+    pathFile = strcat(pathFile, user);
+    pathFile = strcat(pathFile, "/Documents/");
+    dir_prefix = malloc(200);
+    dir_prefix = strcpy(dir_prefix, "server_dir_");
+
+    if ((serverdir = opendir(pathFile)) == NULL)
+    {
+        fprintf(stderr, "Can't open %s\n", pathFile);
+        return -1;
+    }
+    char *name;
+    char *clientname;
+    struct dirent *myfile;
+    DIR *clientdir;
+    char *pathclient;
+    clientname = malloc(200);
+    name = malloc(200);
+    pathclient = malloc(200);
+    while((mydir = readdir(serverdir)) != NULL)
+    {
+        int n = 11, i = 0, fileindex=0;
+        clientname = strcpy(clientname, "");
+        if(strncmp(dir_prefix, mydir->d_name, 11) == 0)
+        {
+
+            name = strcpy(name, mydir->d_name);
+            do
+            {
+                clientname[i] = name[n];
+                n++;
+                i++;
+            }
+            while(name[n]!='\0');
+            CLIENT clt;
+            strcpy(clt.userid,clientname);
+            clt.logged_in=0;
+            pathclient = strcpy(pathclient, pathFile);
+            pathclient = strcat(pathclient, dir_prefix);
+            pathclient = strcat(pathclient, clientname);
+            pathclient = strcat(pathclient, "/");
+            if ((clientdir = opendir(pathclient)) == NULL)
+            {
+                fprintf(stderr, "Can't open %s\n", pathclient);
+                return 0;
+            }
+            while((myfile = readdir(clientdir)) != NULL)
+            {
+                if (myfile->d_type == DT_REG){
+                    if(myfile->d_name[strlen(myfile->d_name)-1] != '~')
+                    {
+                        FILE_INFO fileinf;
+                        char *filepath;
+                        filepath = malloc(200);
+                        filepath=  strcpy(filepath, pathclient);
+                        filepath = strcat(filepath,myfile->d_name);
+                        strcpy(fileinf.name,myfile->d_name);
+                        fileinf.time_lastModified = file_lastModifier(filepath);
+                        fileinf.size = file_size(filepath);
+                        clt.file_info[fileindex] = fileinf;
+                        fileindex++;                    }
+                }
+            }
+            insertList(clt);
+            closedir(clientdir);
+            fileindex=0;
+        }
+    }
+    closedir(serverdir);
+}
 
 int main (int argc, char *argv[])
 {
@@ -589,7 +667,7 @@ int main (int argc, char *argv[])
         printf("Server Connected!!!\n");
 
     initializerList(); //Inicializa a lista de clientes
-
+    initServer();
     while(running_)
     {
         id_client = acceptLoop();

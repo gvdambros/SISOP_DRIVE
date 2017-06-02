@@ -40,6 +40,7 @@ typedef struct lst{
 
 void initializerList();
 int insertList(CLIENT newCliente);
+void initServer();
 CLIENT_LIST* searchInClientList(CLIENT nodo);
 
 
