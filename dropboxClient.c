@@ -104,9 +104,11 @@ int sync_client()
     int numberFiles = numberOfFilesInDir(dir);
     safe_sendINT(socket_client, &numberFiles);
 
-    for(i = 0; i < numberFiles; i++){
+    i = 0;
+    while(i < numberFiles){
         dp = readdir(dfd);
-        if (dp->d_type == DT_REG){
+        if (dp->d_type == DT_REG || dp->d_type == DT_UNKNOWN){
+            i++;
             struct stat stbuf;
             sprintf( pathFile, "%s/%s",dir,dp->d_name) ;
             if( stat(pathFile,&stbuf ) == -1 )
@@ -118,6 +120,7 @@ int sync_client()
             // Send name of file
             strcpy(request,dp->d_name);
             send(socket_client, request, MAXFILENAME, 0);
+
 
             // Send last modified time (time_t)
             send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
@@ -350,7 +353,7 @@ void *sync_function()
     {
         printf("INOTIFY not initializated\n");
     }
-    watch = inotify_add_watch( guard, dropboxDir_, IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY | IN_CREATE | IN_DELETE );
+    watch = inotify_add_watch( guard, dropboxDir_, IN_MOVED_FROM | IN_MOVED_TO | IN_CLOSE_WRITE | IN_CREATE | IN_DELETE );
 
     // Setting non-blocking read for guard
     int flags = fcntl(guard, F_GETFL, 0);
@@ -372,7 +375,7 @@ void *sync_function()
             struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
             if ( event->len )
             {
-                if ( (event->mask & IN_CREATE) || (event->mask & IN_MODIFY) || (event->mask & IN_MOVED_TO))
+                if ( (event->mask & IN_CREATE) || (event->mask & IN_CLOSE_WRITE) || (event->mask & IN_MOVED_TO))
                 {
                     // server has to decide if it was a new file or a modification by seeing if the file already exists.
                     sprintf( pathFile, "%s%s",dropboxDir_,event->name) ;
