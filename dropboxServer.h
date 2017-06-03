@@ -2,15 +2,10 @@
 #define DROPBOXSERVER_H_INCLUDED
 
 #include "dropboxUtil.h"
-
-#define BUFFER_SIZE 1024*1024
-
-int port_ = 4000;
+#include <pthread.h>
 
 typedef struct file_info{
     char name[MAXFILENAME];
-    //char extension[MAXNAME];
-    //char last_modified[MAXNAME];
     time_t time_lastModified;
     int size;
 } FILE_INFO;
@@ -20,6 +15,7 @@ typedef struct client{
     char userid[MAXNAME];
     FILE_INFO file_info[MAXFILES];
     int logged_in;
+    pthread_mutex_t mutex;
 } CLIENT;
 
 typedef struct arg_struct {
@@ -53,7 +49,8 @@ int read_and_write(int id_cliente, void* buffer);
 CLIENT_LIST *clientLst_ = NULL; //lista global de clientes
 int running_;
 int socket_server_;
-char buffer[BUFFER_SIZE];//temporario
+int port_ = 4000;
+pthread_mutex_t server_mutex_;
 
 
 // ADDED STUFF

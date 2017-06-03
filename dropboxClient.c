@@ -23,8 +23,6 @@
 #define EVENT_SIZE  ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
 
-#define BUFFER_SIZE 1024*1024
-
 #include <time.h>
 
 int connect_server(char *host, int port)
@@ -124,7 +122,13 @@ int sync_client()
             // Send last modified time (time_t)
             send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
 
+            char buff[20];
+            struct tm * timeinfo;
+            timeinfo = localtime (&stbuf.st_mtime);
+            strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
+
             fprintf(stderr,"%s\n",dp->d_name) ;
+            fprintf(stderr,"%s\n",buff) ;
         }
 
     }
@@ -160,7 +164,7 @@ int sync_client()
         while (acc < size)
         {
             // receive at most 1MB of data
-            read = recv(socket_client, buf, BUFFER_SIZE, 0);
+            read = recv(socket_client, buf, size, 0);
 
             // write the received data in the file
             fwrite(buf, sizeof(char), read, fp);
@@ -210,7 +214,7 @@ void get_file(char *file)
     while (acc < size)
     {
         // receive at most 1MB of data
-        int read = recv(socket_client, buf, BUFFER_SIZE, 0);
+        int read = recv(socket_client, buf, size, 0);
 
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
@@ -259,12 +263,14 @@ void send_file(char *file)
     sem_wait(&runningRequest);
 
     if((fs = file_size(file)) < 0){
-        return -1;
+        fs = 0;
     }
 
     time_t *lastModified;
     if( (lastModified = file_lastModifier(file)) == NULL){
-        return -1;
+        fs = 0;
+        time_t aux = time(NULL);
+        lastModified = &aux;
     }
 
     // send request to upload of file
@@ -279,20 +285,21 @@ void send_file(char *file)
     // send last modified
     send(socket_client, lastModified, sizeof(time_t), 0);
 
-    FILE *fp = fopen(file, "r");
+    FILE *fp;
+    if(fs) fp = fopen(file, "r");
 
     fprintf(stderr, "size: %d\n", fs);
 
     while(offset < fs)
     {
-        int bytes_read = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+        int bytes_read = fread(buffer, sizeof(char), fs, fp);
         sent_bytes = send(socket_client, (char*) buffer, bytes_read, 0);
         offset += sent_bytes;
     }
 
     printf("sending done\n");
 
-    fclose(fp);
+    if(fs) fclose(fp);
 
     sem_post(&runningRequest);
 

@@ -99,22 +99,9 @@ int acceptLoop()
     if ((new_socket_client = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
         printf("ERROR on accept\n");
 
-    bzero(buffer, BUFFER_SIZE);
-
     return new_socket_client;
 }
 
-char* read_user_id(int id_client)
-{
-    int n;
-    /* read from the socket */
-    n = read(id_client, buffer, BUFFER_SIZE);
-    if (n < 0)
-        printf("ERROR reading from socket\n");
-    printf("The userID is: %s\n", buffer);
-
-    return buffer;
-}
 
 CLIENT_LIST* user_verify(char *id_user)
 {
@@ -137,6 +124,9 @@ CLIENT_LIST* user_verify(char *id_user)
         new_user.devices[1] = 0;
         new_user.logged_in = 0;
         initFiles_ClientDir(&new_user);
+        pthread_mutex_init(&(new_user.mutex), NULL);
+
+        pthread_mutex_lock(&server_mutex_);
         if (insertList(new_user) < 0)
         {
             printf("Client unsuccessfully registered\n");
@@ -147,6 +137,7 @@ CLIENT_LIST* user_verify(char *id_user)
             printf("Client successfully registered\n");
             return searchInClientList(new_user);
         }
+        pthread_mutex_unlock(&server_mutex_);
     }
     else
     {
@@ -246,7 +237,6 @@ void client_handling(void *arguments)
         mkdir(dir, 0777);
     }
 
-
     while (running_)
     {
         safe_recv(id_client, request, MAXREQUEST);
@@ -256,7 +246,7 @@ void client_handling(void *arguments)
         if (strcmp(commandLine.cmd, "sync") == 0)   //Solicitação de Sincronização (sync_client())
         {
             fprintf(stderr, "sync file...\n");
-
+            printFiles_ClientDir(current_client->cli);
             int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(current_client->cli), i, j, count = 0;
             int *bitMap = calloc(MAXFILES, sizeof(int));
             // bitMap[i] == 0 -> espaço vazio
@@ -278,12 +268,12 @@ void client_handling(void *arguments)
             time_t lastModified;
             for(i = 0; i < numberFilesClient; i++){
                safe_recv(id_client, &filename, MAXFILENAME);
-               safe_recv(id_client, &lastModified, sizeof(lastModified));
+               safe_recv(id_client, &lastModified, sizeof(time_t));
 
                 fprintf(stderr, "arquivo %s\n", filename);
 
                 // find file in the client dir
-                if( (j = findFile_ClientDir(filename)) < 0)
+                if( (j = findFile_ClientDir(current_client->cli, filename)) < 0)
                 {
                     continue;
                 }
@@ -295,6 +285,7 @@ void client_handling(void *arguments)
                     bitMap[j] = 1;
                     count++;
                 }
+
             }
 
             // send number of files that are not sync
@@ -324,7 +315,7 @@ void client_handling(void *arguments)
 
                     while(offset < fs)
                     {
-                        int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+                        int bytes_send = fread(buffer, sizeof(char), fs, fp);
                         sent_bytes = send(id_client, (char*) buffer, bytes_send, 0);
                         offset += sent_bytes;
                     }
@@ -372,7 +363,7 @@ void client_handling(void *arguments)
 
             while(offset < fs)
             {
-                int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+                int bytes_send = fread(buffer, sizeof(char), fs, fp);
                 sent_bytes = send(id_client, (char*) buffer, bytes_send, 0);
                 offset += sent_bytes;
             }
@@ -394,8 +385,6 @@ void client_handling(void *arguments)
             pathFile = strcpy(pathFile, dir);
             pathFile = strcat(pathFile, commandLine.param);
 
-            int full = isFull_ClientDir(current_client->cli);
-
             if(fs)
             {
                 FILE *fp = fopen(pathFile, "w");
@@ -406,21 +395,26 @@ void client_handling(void *arguments)
                 while (acc < fs)
                 {
                     // receive at most 1MB of data
-                    int read = recv(id_client, buffer, BUFFER_SIZE, 0);
+                    int read = recv(id_client, buffer, fs, 0);
 
                     // write the received data in the file
-                    if(!full) fwrite(buffer, sizeof(char), read, fp);
+                    fwrite(buffer, sizeof(char), read, fp);
 
                     acc += read;
                 }
 
                 // if the dir was full before, delete the received file
                 // else add to the struct
+
+                pthread_mutex_lock(&(current_client->cli.mutex));
+                int full = isFull_ClientDir(current_client->cli);
                 if(full){
                     remove(pathFile);
                 } else {
                     addFile_ClientDir(&(current_client->cli), commandLine.param, fs, lm);
                 }
+                pthread_mutex_unlock(&(current_client->cli.mutex));
+
                 printFiles_ClientDir(current_client->cli);
 
                 fclose(fp);
@@ -436,11 +430,14 @@ void client_handling(void *arguments)
         {
             fprintf(stderr, "delete file...\n");
 
+            pthread_mutex_lock(&(current_client->cli.mutex));
+            deleteFile_ClientDir(&(current_client->cli), commandLine.param);
+            pthread_mutex_unlock(&(current_client->cli.mutex));
+
             pathFile = strcpy(pathFile, dir);
             pathFile = strcat(pathFile, commandLine.param);
             remove(pathFile);
 
-            deleteFile_ClientDir(&(current_client->cli), commandLine.param);
             printFiles_ClientDir(current_client->cli);
 
             fprintf(stderr, "delete done\n");
@@ -469,7 +466,11 @@ void printFiles_ClientDir(CLIENT client)
     {
         if(client.file_info[i].size != -1)
         {
-            fprintf(stderr, "file: %s size: %d\n", client.file_info[i].name, client.file_info[i].size);
+            char buff[20];
+            struct tm * timeinfo;
+            timeinfo = localtime (&(client.file_info[i].time_lastModified));
+            strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
+            fprintf(stderr, "file: %s size: %d last: %s\n", client.file_info[i].name, client.file_info[i].size, buff);
         }
     }
     return;
@@ -511,7 +512,7 @@ int findFile_ClientDir(CLIENT client, char *file)
     int i = 0;
     while(i < MAXFILES && strcmp(client.file_info[i].name, file))
     {
-        fprintf(stderr, "file different %s \n",client.file_info[i].name );
+        fprintf(stderr, "File: %s\n", client.file_info[i].name);
         i++;
     }
     if(i >= MAXFILES)
@@ -588,6 +589,8 @@ void initServer()
     dir_prefix = malloc(200);
     dir_prefix = strcpy(dir_prefix, "server_dir_");
 
+    pthread_mutex_init(&(server_mutex_), NULL);
+
     if ((serverdir = opendir(pathFile)) == NULL)
     {
         fprintf(stderr, "Can't open %s\n", pathFile);
@@ -616,9 +619,9 @@ void initServer()
                 i++;
             }
             while(name[n]!='\0');
-            CLIENT clt;
-            strcpy(clt.userid,clientname);
-            clt.logged_in=0;
+
+            CLIENT_LIST *clt = user_verify(clientname);
+
             pathclient = strcpy(pathclient, pathFile);
             pathclient = strcat(pathclient, dir_prefix);
             pathclient = strcat(pathclient, clientname);
@@ -636,16 +639,16 @@ void initServer()
                         FILE_INFO fileinf;
                         char *filepath;
                         filepath = malloc(200);
-                        filepath=  strcpy(filepath, pathclient);
+                        filepath = strcpy(filepath, pathclient);
                         filepath = strcat(filepath,myfile->d_name);
                         strcpy(fileinf.name,myfile->d_name);
-                        fileinf.time_lastModified = file_lastModifier(filepath);
+                        fileinf.time_lastModified = *file_lastModifier(filepath);
                         fileinf.size = file_size(filepath);
-                        clt.file_info[fileindex] = fileinf;
-                        fileindex++;                    }
+                        clt->cli.file_info[fileindex] = fileinf;
+                        fileindex++;
+                    }
                 }
             }
-            insertList(clt);
             closedir(clientdir);
             fileindex=0;
         }
