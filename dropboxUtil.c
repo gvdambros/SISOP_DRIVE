@@ -70,12 +70,12 @@ int safe_recv(int client_fd, char *buf, int s)
 
 int safe_recvINT(int client_fd, int *buf){
     safe_recv(client_fd, buf, sizeof(int));
-    (*buf) = ntohs(*buf);
+    (*buf) = ntohl(*buf);
 }
 
 
 int safe_sendINT(int client_fd, int *buf){
-    int aux = htons(*buf);
+    int aux = htonl(*buf);
     send(client_fd, &aux, sizeof(int), 0);
 }
 

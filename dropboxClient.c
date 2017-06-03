@@ -256,11 +256,19 @@ void list_files()
 
 void send_file(char *file)
 {
-    char* request = (char*) malloc(MAXREQUEST);
+    char *request = (char*) malloc(MAXREQUEST), *filename = malloc(MAXFILENAME);
     int fs, aux, sent_bytes, offset = 0;
     char buffer[BUFFER_SIZE];
 
     sem_wait(&runningRequest);
+
+    if( strrchr(file, '/') ){
+        strcpy(filename,strrchr(file, '/') + 1);
+    }
+    else{
+        strcpy(filename, file);
+    }
+    fprintf(stderr, "filename: %s\n", filename);
 
     if((fs = file_size(file)) < 0){
         fs = 0;
@@ -276,8 +284,9 @@ void send_file(char *file)
     // send request to upload of file
     // always send the biggest request possible
     strcpy(request,"upload ");
-    strcat(request, file);
+    strcat(request, filename);
     send(socket_client, request, MAXREQUEST, 0);
+    fprintf(stderr, "request: %s\n", request);
 
     // send file size
     safe_sendINT(socket_client, &fs);
@@ -334,7 +343,8 @@ void send_id(char *id)
 void *sync_function()
 {
     int guard, watch, numOfChanges, i;
-    char buffer[EVENT_BUF_LEN];
+    char buffer[EVENT_BUF_LEN], *pathFile = malloc(200);
+
 
     if((guard = inotify_init())< 0)
     {
@@ -365,8 +375,9 @@ void *sync_function()
                 if ( (event->mask & IN_CREATE) || (event->mask & IN_MODIFY) || (event->mask & IN_MOVED_TO))
                 {
                     // server has to decide if it was a new file or a modification by seeing if the file already exists.
-                    printf("add %s\n", event->name);
-                    send_file(event->name);
+                    sprintf( pathFile, "%s%s",dropboxDir_,event->name) ;
+                    fprintf(stderr, "add %s\n", pathFile);
+                    send_file(pathFile);
                 }
                 else if ( (event->mask & IN_DELETE) || (event->mask & IN_MOVED_FROM) )
                 {
