@@ -98,7 +98,6 @@ int sync_client()
     struct dirent *dp;
     DIR *dfd;
 
-    fprintf(stderr, "dir: %s\n", dropboxDir_);
     if ((dfd = opendir(dropboxDir_)) == NULL)
     {
         fprintf(stderr, "Can't open %s\n", dropboxDir_);
@@ -143,8 +142,9 @@ int sync_client()
     // receive number of files that are not sync
     safe_recvINT(socket_client, &numberFiles);
 
-    fprintf(stderr, "%d vao ser recebidos\n",numberFiles );
-
+    if (numberFiles > 0) {
+        fprintf(stderr, "%d vao ser recebidos\n",numberFiles );
+    }
 
     for(i = 0; i < numberFiles; i++){
 
@@ -351,6 +351,8 @@ void *sync_function()
 {
     int guard, watch, numOfChanges, i;
     char buffer[EVENT_BUF_LEN], *pathFile = malloc(200);
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
 
 
     if((guard = inotify_init())< 0)
@@ -396,6 +398,11 @@ void *sync_function()
         }
 
         sync_client();
+
+        t = time(NULL);
+        tm = *localtime(&t);
+
+        printf("sync em: %d:%d:%d\n", tm.tm_hour, tm.tm_min, tm.tm_sec);
     }
     inotify_rm_watch( guard, watch );
     close( guard );

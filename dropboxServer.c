@@ -296,7 +296,7 @@ void client_handling(void *arguments)
             fprintf(stderr, "%d vao ser enviados dos %d arquivo no server\n", count, numberFilesServer);
             // send files that are not sync
             for(i = 0; i < MAXFILES; i++){
-                fprintf(stderr, "%d\n", bitMap[i]);
+                //fprintf(stderr, "%d\n", bitMap[i]);
                 if(bitMap[i] == 2){
                     strcpy(pathFile, dir);
                     strcat(pathFile, current_client->cli.file_info[i].name);
@@ -326,7 +326,7 @@ void client_handling(void *arguments)
                 }
             }
 
-            fprintf(stderr, "sync done\n");
+            fprintf(stderr, "sync done\n\n");
 
         }
         else if (strcmp(commandLine.cmd, "download") == 0)
@@ -370,7 +370,7 @@ void client_handling(void *arguments)
             }
 
             fclose(fp);
-            fprintf(stderr, "download done\n");
+            fprintf(stderr, "download done\n\n");
         }
         else if (strcmp(commandLine.cmd, "upload") == 0)
         {
@@ -425,7 +425,7 @@ void client_handling(void *arguments)
                 new_times.modtime = lm;    /* set mtime to current time */
                 utime(pathFile, &new_times);
             }
-            fprintf(stderr, "upload done\n");
+            fprintf(stderr, "upload done\n\n");
         }
         else if (strcmp(commandLine.cmd, "delete") == 0)
         {
@@ -441,11 +441,11 @@ void client_handling(void *arguments)
 
             printFiles_ClientDir(current_client->cli);
 
-            fprintf(stderr, "delete done\n");
+            fprintf(stderr, "delete done\n\n");
         }
         else if (strcmp(commandLine.cmd, "exit") == 0)
         {
-            fprintf(stderr, "exiting...\n");
+            fprintf(stderr, "exiting...\n\n");
             client_logout(&current_client->cli, device); //Realiza o logout
             close(id_client);
             pthread_exit(0);
