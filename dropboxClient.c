@@ -61,22 +61,16 @@ void close_connection()
     close(socket_client);
 }
 
-int sync_client()
-{
-    char *dir, *pathFile = (char*) malloc(200);;
-    char *user; // nome do usuario linux
-    int i;
-    char buf[BUFFER_SIZE]; //buffer 1MG
-    char* request = (char*) malloc(MAXREQUEST);
-    char* fileName = (char*) malloc( MAXFILENAME );
+void set_dir() {
 
+    char *dir, *user; // nome do usuario linux
 
     user = getLinuxUser();
 
     dir = malloc(200);
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
-    dir = strcat(dir, "/Documents/sync_dir_");
+    dir = strcat(dir, "/Dropbox/sync_dir_");
     dir = strcat(dir, name_client);
     dir = strcat(dir, "/");
 
@@ -86,6 +80,15 @@ int sync_client()
     }
 
     strcpy(dropboxDir_, dir);
+}
+
+int sync_client()
+{
+    char *pathFile = (char*) malloc(200);;
+    int i;
+    char buf[BUFFER_SIZE]; //buffer 1MG
+    char* request = (char*) malloc(MAXREQUEST);
+    char* fileName = (char*) malloc( MAXFILENAME );
 
     // send request to sync
     // always send the biggest request possible
@@ -95,13 +98,14 @@ int sync_client()
     struct dirent *dp;
     DIR *dfd;
 
-    if ((dfd = opendir(dir)) == NULL)
+    fprintf(stderr, "dir: %s\n", dropboxDir_);
+    if ((dfd = opendir(dropboxDir_)) == NULL)
     {
-        fprintf(stderr, "Can't open %s\n", dir);
+        fprintf(stderr, "Can't open %s\n", dropboxDir_);
         return 0;
     }
 
-    int numberFiles = numberOfFilesInDir(dir);
+    int numberFiles = numberOfFilesInDir(dropboxDir_);
     safe_sendINT(socket_client, &numberFiles);
 
     i = 0;
@@ -110,7 +114,7 @@ int sync_client()
         if (dp->d_type == DT_REG || dp->d_type == DT_UNKNOWN){
             i++;
             struct stat stbuf;
-            sprintf( pathFile, "%s/%s",dir,dp->d_name) ;
+            sprintf( pathFile, "%s/%s",dropboxDir_,dp->d_name) ;
             if( stat(pathFile,&stbuf ) == -1 )
             {
                 fprintf(stderr, "Unable to stat file: %s\n", pathFile) ;
@@ -155,7 +159,7 @@ int sync_client()
         time_t lm;
         safe_recv(socket_client, &lm, sizeof(time_t));
 
-        pathFile = strcpy(pathFile, dir);
+        pathFile = strcpy(pathFile, dropboxDir_);
         pathFile = strcat(pathFile, fileName);
 
         FILE *fp = fopen(pathFile, "w");
@@ -390,6 +394,8 @@ void *sync_function()
             }
             i += EVENT_SIZE + event->len;
         }
+
+        sync_client();
     }
     inotify_rm_watch( guard, watch );
     close( guard );
@@ -422,6 +428,7 @@ int main(int argc, char *argv[])
         send_id(argv[1]);
     }
 
+    set_dir();
     sync_client();
 
     running = 1;

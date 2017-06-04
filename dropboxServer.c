@@ -130,14 +130,15 @@ CLIENT_LIST* user_verify(char *id_user)
         if (insertList(new_user) < 0)
         {
             printf("Client unsuccessfully registered\n");
+            pthread_mutex_unlock(&server_mutex_);
             return NULL;
         }
         else
         {
             printf("Client successfully registered\n");
+            pthread_mutex_unlock(&server_mutex_);
             return searchInClientList(new_user);
         }
-        pthread_mutex_unlock(&server_mutex_);
     }
     else
     {
@@ -227,7 +228,7 @@ void client_handling(void *arguments)
 
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
-    dir = strcat(dir, "/Documents/server_dir_");
+    dir = strcat(dir, "/Dropbox/server_dir_");
     dir = strcat(dir, id_user);
     dir = strcat(dir, "/");
 
@@ -325,7 +326,7 @@ void client_handling(void *arguments)
                 }
             }
 
-            fprintf(stderr, "sync file...\n");
+            fprintf(stderr, "sync done\n");
 
         }
         else if (strcmp(commandLine.cmd, "download") == 0)
@@ -585,7 +586,7 @@ void initServer()
     user = getLinuxUser();
     pathFile = strcpy(pathFile, "/home/");
     pathFile = strcat(pathFile, user);
-    pathFile = strcat(pathFile, "/Documents/");
+    pathFile = strcat(pathFile, "/Dropbox/");
     dir_prefix = malloc(200);
     dir_prefix = strcpy(dir_prefix, "server_dir_");
 
