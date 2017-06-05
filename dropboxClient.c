@@ -90,6 +90,7 @@ int sync_client()
     char* request = (char*) malloc(MAXREQUEST);
     char* fileName = (char*) malloc( MAXFILENAME );
 
+    sem_wait(&runningRequest);
     // send request to sync
     // always send the biggest request possible
     strcpy(request,"sync");
@@ -133,8 +134,8 @@ int sync_client()
             timeinfo = localtime (&stbuf.st_mtime);
             strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
 
-            fprintf(stderr,"%s\n",dp->d_name) ;
-            fprintf(stderr,"%s\n",buff) ;
+            //fprintf(stderr,"%s\n",dp->d_name) ;
+            //fprintf(stderr,"%s\n",buff) ;
         }
 
     }
@@ -187,6 +188,8 @@ int sync_client()
         new_times.modtime = lm;    /* set mtime to current time */
         utime(pathFile, &new_times);
     }
+    sem_post(&runningRequest);
+
     return 0;
 }
 
@@ -201,6 +204,8 @@ void get_file(char *file)
     // always send the biggest request possible
     strcpy(request,"download ");
     strcat(request, file);
+
+    sem_wait(&runningRequest);
     send(socket_client, request, MAXREQUEST, 0);
 
     // receive file size from server
@@ -236,6 +241,8 @@ void get_file(char *file)
     new_times.actime = time(NULL);
     new_times.modtime = lm;    /* set mtime to current time */
     utime(file, &new_times);
+
+    sem_post(&runningRequest);
 
     return;
 }
@@ -330,8 +337,9 @@ void delete_file(char *file)
     // always send the biggest request possible
     strcpy(request,"delete ");
     strcat(request, file);
+    sem_wait(&runningRequest);
     send(socket_client, request, MAXREQUEST, 0);
-
+    sem_post(&runningRequest);
     return;
 }
 
@@ -402,7 +410,7 @@ void *sync_function()
         t = time(NULL);
         tm = *localtime(&t);
 
-        printf("sync em: %d:%d:%d\n", tm.tm_hour, tm.tm_min, tm.tm_sec);
+        //printf("sync em: %d:%d:%d\n", tm.tm_hour, tm.tm_min, tm.tm_sec);
     }
     inotify_rm_watch( guard, watch );
     close( guard );
@@ -435,12 +443,12 @@ int main(int argc, char *argv[])
         send_id(argv[1]);
     }
 
+    sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     set_dir();
     sync_client();
 
     running = 1;
 
-    sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
 
     char cmd_line[MAXREQUEST] = "";
