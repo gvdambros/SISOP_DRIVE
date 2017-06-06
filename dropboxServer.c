@@ -222,8 +222,8 @@ void client_handling(void *arguments)
         pthread_exit(0);    //Se não for possível, encerra a thread
     }
 
-    dir = malloc(200);
-    pathFile = malloc(200);
+    dir = malloc(MAXPATH);
+    pathFile = malloc(MAXPATH);
     user = getLinuxUser();
 
     dir = strcpy(dir, "/home/");
@@ -580,14 +580,14 @@ void sync_server()
 void initServer()
 {
     char *user, *pathFile, *dir_prefix, c;
-    pathFile = malloc(200);
+    pathFile = malloc(MAXPATH);
     DIR *serverdir;
     struct dirent *mydir;
     user = getLinuxUser();
     pathFile = strcpy(pathFile, "/home/");
     pathFile = strcat(pathFile, user);
     pathFile = strcat(pathFile, "/Dropbox/");
-    dir_prefix = malloc(200);
+    dir_prefix = malloc(MAXPATH);
     dir_prefix = strcpy(dir_prefix, "server_dir_");
 
     pthread_mutex_init(&(server_mutex_), NULL);
@@ -602,9 +602,9 @@ void initServer()
     struct dirent *myfile;
     DIR *clientdir;
     char *pathclient;
-    clientname = malloc(200);
-    name = malloc(200);
-    pathclient = malloc(200);
+    clientname = malloc(MAXPATH);
+    name = malloc(MAXPATH);
+    pathclient = malloc(MAXPATH);
     while((mydir = readdir(serverdir)) != NULL)
     {
         int n = 11, i = 0, fileindex=0;
@@ -639,7 +639,7 @@ void initServer()
                     {
                         FILE_INFO fileinf;
                         char *filepath;
-                        filepath = malloc(200);
+                        filepath = malloc(MAXPATH);
                         filepath = strcpy(filepath, pathclient);
                         filepath = strcat(filepath,myfile->d_name);
                         strcpy(fileinf.name,myfile->d_name);

@@ -67,7 +67,7 @@ void set_dir() {
 
     user = getLinuxUser();
 
-    dir = malloc(200);
+    dir = malloc(MAXPATH);
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
     dir = strcat(dir, "/Dropbox/sync_dir_");
@@ -84,7 +84,7 @@ void set_dir() {
 
 int sync_client()
 {
-    char *pathFile = (char*) malloc(200);;
+    char *pathFile = (char*) malloc(MAXPATH);
     int i;
     char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
@@ -358,7 +358,7 @@ void send_id(char *id)
 void *sync_function()
 {
     int guard, watch, numOfChanges, i;
-    char buffer[EVENT_BUF_LEN], *pathFile = malloc(200);
+    char buffer[EVENT_BUF_LEN], *pathFile = malloc(MAXPATH);
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
 

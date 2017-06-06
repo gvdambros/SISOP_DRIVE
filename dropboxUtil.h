@@ -6,6 +6,7 @@
 #define MAXFILES 10
 #define MAXNAME 10
 #define MAXDEVICES 2
+#define MAXPATH 200
 #define MAXFILENAME 2*MAXNAME+2
 #define BUFFER_SIZE 1024*1024
 
@@ -14,7 +15,7 @@
 
 typedef struct command{
     char cmd[MAXCMD + 1];
-    char param[MAXNAME*2 + 1];
+    char param[MAXPATH];
 } user_cmd;
 
 int safe_recv(int client_fd, char *buf, int s);
