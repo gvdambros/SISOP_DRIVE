@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "dropboxServer.h"
 #include <pthread.h>
+#include <pthread.h>
 #include <time.h>
 #include <utime.h>
 
@@ -119,7 +120,6 @@ CLIENT_LIST* user_verify(char *id_user)
 
         //Registra e retorna um novo cliente
         printf("Registering Client\n");
-
         new_user.devices[0] = 0;
         new_user.devices[1] = 0;
         new_user.logged_in = 0;
@@ -197,20 +197,18 @@ int client_logout(CLIENT *client, int device)
     return 0;
 }
 
-void client_handling(void *arguments)
+void client_handling(void* arg)
 {
+    USER_INFO user_info = *(USER_INFO*)arg;
 
     //Visa organizar todas as ações relacionadas a lidar com o login de um usuário e realizar suas solicitações
-
-    ARGS *args = (ARGS *) arguments;
     char id_user[MAXNAME];
-    int id_client;
-    strcpy(id_user, args->arg1);
-    id_client = args->arg2;
+    int socket_user = user_info.socket;
+    strcpy(id_user, user_info.username);
 
-    CLIENT_LIST *current_client = user_verify(id_user);    //Nodo da lista contendo as infos do usuário
+    CLIENT_LIST* current_client = user_verify(id_user);    //Nodo da lista contendo as infos do usuário
     int n, device = -1, n_files = 0;                //Device ativo para esta thread
-    char buffer[BUFFER_SIZE], filename[MAXREQUEST], request[MAXNAME], *dir, *pathFile;
+    char filename[MAXREQUEST], request[MAXNAME], *dir, *pathFile;
     time_t filetime;
     char *user;
 
@@ -218,7 +216,7 @@ void client_handling(void *arguments)
     if (device < 0)
     {
         printf("Login request canceled\n\n");
-        close(id_client);   //Fecha o socket
+        close(socket_user);   //Fecha o socket
         pthread_exit(0);    //Se não for possível, encerra a thread
     }
 
@@ -228,7 +226,7 @@ void client_handling(void *arguments)
 
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
-    dir = strcat(dir, "/Dropbox/server_dir_");
+    dir = strcat(dir, "/server_dir_");
     dir = strcat(dir, id_user);
     dir = strcat(dir, "/");
 
@@ -240,206 +238,41 @@ void client_handling(void *arguments)
 
     while (running_)
     {
-        safe_recv(id_client, request, MAXREQUEST);
+        safe_recv(socket_user, request, MAXREQUEST);
         fprintf(stderr, "request: %s\n",request);
         user_cmd commandLine = string2userCmd(request);
 
         if (strcmp(commandLine.cmd, "sync") == 0)   //Solicitação de Sincronização (sync_client())
         {
-            fprintf(stderr, "sync file...\n");
-            printFiles_ClientDir(current_client->cli);
-            int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(current_client->cli), i, j, count = 0;
-            int *bitMap = calloc(MAXFILES, sizeof(int));
-            // bitMap[i] == 0 -> espaço vazio
-            // bitMap[i] == 1 -> arquivo synx
-            // bitMap[i] == 2 -> arquivo não existe no usuario ou não sync
-
-            for(i = 0; i < MAXFILES; i++){
-                if(current_client->cli.file_info[i].size > 0){
-                    bitMap[i] = 2;
-                }
-            }
-
-            safe_recvINT(id_client, &numberFilesClient);
-
-            fprintf(stderr, "O usuario tem %d arquivos\n", numberFilesClient);
-
-            // Check to see which files are sync
-            // bitMap keeps track of them
-            time_t lastModified;
-            for(i = 0; i < numberFilesClient; i++){
-               safe_recv(id_client, &filename, MAXFILENAME);
-               safe_recv(id_client, &lastModified, sizeof(time_t));
-
-                fprintf(stderr, "arquivo %s\n", filename);
-
-                // find file in the client dir
-                if( (j = findFile_ClientDir(current_client->cli, filename)) < 0)
-                {
-                    continue;
-                }
-
-                // if the file in the user computer is sync
-                if(!difftime(lastModified, current_client->cli.file_info[j].time_lastModified ))
-                {
-                    fprintf(stderr, "arquivo %s ta sync\n", filename);
-                    bitMap[j] = 1;
-                    count++;
-                }
-
-            }
-
-            // send number of files that are not sync
-            count = numberFilesServer - count;
-            safe_sendINT(id_client, &count);
-
-            fprintf(stderr, "%d vao ser enviados dos %d arquivo no server\n", count, numberFilesServer);
-            // send files that are not sync
-            for(i = 0; i < MAXFILES; i++){
-                //fprintf(stderr, "%d\n", bitMap[i]);
-                if(bitMap[i] == 2){
-                    strcpy(pathFile, dir);
-                    strcat(pathFile, current_client->cli.file_info[i].name);
-
-
-                    int fs = current_client->cli.file_info[i].size;
-
-                    fprintf(stderr, "enviando %s %d bytes\n", current_client->cli.file_info[i].name, fs);
-
-                    send(id_client, current_client->cli.file_info[i].name, MAXFILENAME, 0);
-                    safe_sendINT(id_client, &fs);
-                    send(id_client, &(current_client->cli.file_info[i].time_lastModified), sizeof(time_t), 0);
-
-                    FILE *fp = fopen(pathFile, "r");
-
-                    int sent_bytes, offset = 0;
-
-                    while(offset < fs)
-                    {
-                        int bytes_send = fread(buffer, sizeof(char), fs, fp);
-                        sent_bytes = send(id_client, (char*) buffer, bytes_send, 0);
-                        offset += sent_bytes;
-                    }
-
-                    fclose(fp);
-
-                }
-            }
-
-            fprintf(stderr, "sync done\n\n");
-
+            sync_server(current_client->cli, socket_user);
         }
         else if (strcmp(commandLine.cmd, "download") == 0)
         {
-            int fs;
-            fprintf(stderr, "download file...\n");
-
             strcpy(pathFile, dir);
             strcat(pathFile, commandLine.param);
-            fprintf(stderr, "dir: %s path: %s\n", dir, pathFile);
-
-            int i;
-
-            if( (i = findFile_ClientDir(current_client->cli, commandLine.param)) < 0)
-            {
-                // file doens't exist in dir
-                fs = 0;
-            }
-            else
-            {
-                fprintf(stderr, "i: %d\n",i);
-                fs = current_client->cli.file_info[i].size;
-            }
-
-            fprintf(stderr, "a %d\n", fs);
-
-            safe_sendINT(id_client, &fs);
-            send(id_client, &(current_client->cli.file_info[i].time_lastModified), sizeof(time_t), 0);
-
-
-            FILE *fp = fopen(pathFile, "r");
-            //FILE *fp = fopen("a.txt", "r");
-
-            int sent_bytes, offset = 0;
-
-            while(offset < fs)
-            {
-                int bytes_send = fread(buffer, sizeof(char), fs, fp);
-                sent_bytes = send(id_client, (char*) buffer, bytes_send, 0);
-                offset += sent_bytes;
-            }
-
-            fclose(fp);
-            fprintf(stderr, "download done\n\n");
+            send_file(pathFile, current_client->cli, socket_user);
         }
         else if (strcmp(commandLine.cmd, "upload") == 0)
         {
-            fprintf(stderr, "upload file...\n");
-
-            int fs;
-            safe_recvINT(id_client, &fs);
-
-            // Send last modified time (time_t)
-            time_t lm;
-            safe_recv(id_client, &lm, sizeof(time_t));
-
-            pathFile = strcpy(pathFile, dir);
-            pathFile = strcat(pathFile, commandLine.param);
-
-            if(fs)
-            {
-                FILE *fp = fopen(pathFile, "w");
-
-                fprintf(stderr, "file size: %d\n", fs);
-
-                int acc = 0;
-                while (acc < fs)
-                {
-                    // receive at most 1MB of data
-                    int read = recv(id_client, buffer, fs, 0);
-
-                    // write the received data in the file
-                    fwrite(buffer, sizeof(char), read, fp);
-
-                    acc += read;
-                }
-
-                // if the dir was full before, delete the received file
-                // else add to the struct
-
-                pthread_mutex_lock(&(current_client->cli.mutex));
-                int full = isFull_ClientDir(current_client->cli);
-                if(full){
-                    remove(pathFile);
-                } else {
-                    addFile_ClientDir(&(current_client->cli), commandLine.param, fs, lm);
-                }
-                pthread_mutex_unlock(&(current_client->cli.mutex));
-
-                printFiles_ClientDir(current_client->cli);
-
-                fclose(fp);
-
-                struct utimbuf new_times;
-                new_times.actime = time(NULL);
-                new_times.modtime = lm;    /* set mtime to current time */
-                utime(pathFile, &new_times);
-            }
-            fprintf(stderr, "upload done\n\n");
+            strcpy(pathFile, dir);
+            strcat(pathFile, commandLine.param);
+            receive_file(pathFile, &(current_client->cli), socket_user);
         }
         else if (strcmp(commandLine.cmd, "delete") == 0)
         {
-            fprintf(stderr, "delete file...\n");
+            fprintf(stderr, "delete file %s...\n", commandLine.param);
 
             pthread_mutex_lock(&(current_client->cli.mutex));
-            deleteFile_ClientDir(&(current_client->cli), commandLine.param);
-            pthread_mutex_unlock(&(current_client->cli.mutex));
 
+            printFiles_ClientDir(current_client->cli);
+
+            deleteFile_ClientDir(&(current_client->cli), commandLine.param);
+
+            printFiles_ClientDir(current_client->cli);
             pathFile = strcpy(pathFile, dir);
             pathFile = strcat(pathFile, commandLine.param);
             remove(pathFile);
-
-            printFiles_ClientDir(current_client->cli);
+            pthread_mutex_unlock(&(current_client->cli.mutex));
 
             fprintf(stderr, "delete done\n\n");
         }
@@ -447,7 +280,7 @@ void client_handling(void *arguments)
         {
             fprintf(stderr, "exiting...\n\n");
             client_logout(&current_client->cli, device); //Realiza o logout
-            close(id_client);
+            close(socket_user);
             pthread_exit(0);
         }
         else
@@ -471,7 +304,7 @@ void printFiles_ClientDir(CLIENT client)
             struct tm * timeinfo;
             timeinfo = localtime (&(client.file_info[i].time_lastModified));
             strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
-            fprintf(stderr, "file: %s size: %d last: %s\n", client.file_info[i].name, client.file_info[i].size, buff);
+            fprintf(stderr, "id: %d file: %s size: %d last: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
         }
     }
     return;
@@ -526,11 +359,16 @@ int findFile_ClientDir(CLIENT client, char *file)
 int deleteFile_ClientDir(CLIENT *client, char *file)
 {
     int i = 0;
-    while(i < MAXFILES && !strcmp(client->file_info[i].name, file))  i++;
+        fprintf(stderr, "DELEEEEEEETE");
+    while(i < MAXFILES && strcmp(client->file_info[i].name, file)) {
+        fprintf(stderr, "%s %s ", file, client->file_info[i].name);
+        i++;
+    }
     if(i == MAXFILES)
     {
         return -1;
     }
+    fprintf(stderr, "%s %s %d", file, client->file_info[i].name, i);
     client->file_info[i].size = -1;
     return 0;
 }
@@ -567,15 +405,224 @@ void initFiles_ClientDir(CLIENT *client)
     for(i = 0; i < MAXFILES; i++)
     {
         client->file_info[i].size = -1;
+        client->file_info[i].name[0] = '\0';
     }
     return;
 }
 
-void sync_server()
+void sync_server(CLIENT client, int socket)
 {
+    fprintf(stderr, "sync file... %d \n" ,numberOfFiles_ClientDir(client));
+    int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(client), i, j, count = 0;
+    int *bitMap = calloc(MAXFILES, sizeof(int));
+    char buffer[BUFFER_SIZE], *pathFile = malloc(MAXPATH), *user = malloc(MAXNAME), *dir = malloc(MAXPATH), *filename = malloc(MAXFILENAME);
 
+    fprintf(stderr, "sync file...\n");
+    user = getLinuxUser();
+
+    fprintf(stderr, "sync file...\n");
+    dir = strcpy(dir, "/home/");
+    dir = strcat(dir, user);
+    dir = strcat(dir, "/server_dir_");
+    dir = strcat(dir, client.userid);
+    dir = strcat(dir, "/");
+    // bitMap[i] == 0 -> espaço vazio
+    // bitMap[i] == 1 -> arquivo synx
+    // bitMap[i] == 2 -> arquivo não existe no usuario ou não sync
+
+    fprintf(stderr, "sync file...\n");
+    for(i = 0; i < MAXFILES; i++)
+    {
+        if(client.file_info[i].size > 0)
+        {
+            bitMap[i] = 2;
+        }
+    }
+    fprintf(stderr, "sync file...\n");
+
+    safe_recvINT(socket, &numberFilesClient);
+
+    fprintf(stderr, "O usuario tem %d arquivos\n", numberFilesClient);
+
+    // Check to see which files are sync
+    // bitMap keeps track of them
+    time_t lastModified;
+    for(i = 0; i < numberFilesClient; i++)
+    {
+        safe_recv(socket, filename, MAXFILENAME);
+        safe_recv(socket, &lastModified, sizeof(time_t));
+
+        fprintf(stderr, "arquivo %s\n", filename);
+
+        // find file in the client dir
+        if( (j = findFile_ClientDir(client, filename)) < 0)
+        {
+            continue;
+        }
+
+        // if the file in the user computer is sync
+        if(!difftime(lastModified, client.file_info[j].time_lastModified ))
+        {
+            fprintf(stderr, "arquivo %s ta sync\n", filename);
+            bitMap[j] = 1;
+            count++;
+        }
+
+    }
+
+    // send number of files that are not sync
+    count = numberFilesServer - count;
+    safe_sendINT(socket, &count);
+
+    fprintf(stderr, "%d vao ser enviados dos %d arquivo no server\n", count, numberFilesServer);
+    // send files that are not sync
+    for(i = 0; i < MAXFILES; i++)
+    {
+        //fprintf(stderr, "%d\n", bitMap[i]);
+        if(bitMap[i] == 2)
+        {
+            strcpy(pathFile, dir);
+            strcat(pathFile, client.file_info[i].name);
+
+            int fs = client.file_info[i].size;
+
+            fprintf(stderr, "enviando %s %d bytes\n", client.file_info[i].name, fs);
+
+            send(socket, client.file_info[i].name, MAXFILENAME, 0);
+            safe_sendINT(socket, &fs);
+            send(socket, &(client.file_info[i].time_lastModified), sizeof(time_t), 0);
+
+            FILE *fp = fopen(pathFile, "r");
+
+            int sent_bytes, offset = 0;
+
+            while(offset < fs)
+            {
+                int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+                sent_bytes = send(socket, (char*) buffer, bytes_send, 0);
+                offset += sent_bytes;
+            }
+
+            fclose(fp);
+
+        }
+    }
+
+    fprintf(stderr, "sync done\n\n");
+}
+void send_file(char *file, CLIENT client, int socket)
+{
+    char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);
+
+    int fs;
+    fprintf(stderr, "download file...\n");
+
+    if( strrchr(file, '/') )
+    {
+        strcpy(filename,strrchr(file, '/') + 1);
+    }
+    else
+    {
+        strcpy(filename, file);
+    }
+
+    int i;
+
+    if( (i = findFile_ClientDir(client, filename)) < 0)
+    {
+        // file doens't exist in dir
+        fs = 0;
+    }
+    else
+    {
+        fs = client.file_info[i].size;
+    }
+
+    fprintf(stderr, "a %d\n", fs);
+
+    safe_sendINT(socket, &fs);
+    send(socket, &(client.file_info[i].time_lastModified), sizeof(time_t), 0);
+
+
+    FILE *fp;
+    if(fs) fp = fopen(file, "r");
+
+    int sent_bytes, offset = 0;
+
+    while(offset < fs)
+    {
+        int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+        sent_bytes = send(socket, (char*) buffer, bytes_send, 0);
+        offset += sent_bytes;
+    }
+
+    if(fs) fclose(fp);
+    fprintf(stderr, "download done\n\n");
+}
+void receive_file(char *file, CLIENT *client, int socket)
+{
+    char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);
+    int fs;
+
+    if( strrchr(file, '/') )
+    {
+        strcpy(filename,strrchr(file, '/') + 1);
+    }
+    else
+    {
+        strcpy(filename, file);
+    }
+    safe_recvINT(socket, &fs);
+
+    // Send last modified time (time_t)
+    time_t lm;
+    safe_recv(socket, &lm, sizeof(time_t));
+
+    if(fs)
+    {
+        FILE *fp = fopen(file, "w");
+
+        fprintf(stderr, "file size: %d\n", fs);
+
+        int acc = 0, read, maxRead;
+        while (acc < fs)
+        {
+
+            // receive at most 1MB of data
+            read = recv(socket, buffer, BUFFER_SIZE, 0);
+
+            // write the received data in the file
+            fwrite(buffer, sizeof(char), read, fp);
+
+            acc += read;
+        }
+
+        // if the dir was full before, delete the received file
+        // else add to the struct
+
+        pthread_mutex_lock(&(client->mutex));
+        int full = isFull_ClientDir(*client);
+        if(full)
+        {
+            remove(file);
+        }
+        else
+        {
+            addFile_ClientDir(client, filename, fs, lm);
+        }
+        pthread_mutex_unlock(&(client->mutex));
+
+        fclose(fp);
+
+        struct utimbuf new_times;
+        new_times.actime = time(NULL);
+        new_times.modtime = lm;    /* set mtime to current time */
+        utime(file, &new_times);
+    }
+    fprintf(stderr, "upload done\n\n");
 
 }
+
 
 void initServer()
 {
@@ -586,7 +633,6 @@ void initServer()
     user = getLinuxUser();
     pathFile = strcpy(pathFile, "/home/");
     pathFile = strcat(pathFile, user);
-    pathFile = strcat(pathFile, "/Dropbox/");
     dir_prefix = malloc(MAXPATH);
     dir_prefix = strcpy(dir_prefix, "server_dir_");
 
@@ -608,7 +654,7 @@ void initServer()
     while((mydir = readdir(serverdir)) != NULL)
     {
         int n = 11, i = 0, fileindex=0;
-        clientname = strcpy(clientname, "");
+        memset(clientname, '\0', MAXPATH);
         if(strncmp(dir_prefix, mydir->d_name, 11) == 0)
         {
 
@@ -622,19 +668,21 @@ void initServer()
             while(name[n]!='\0');
 
             CLIENT_LIST *clt = user_verify(clientname);
-
+            memset(pathclient, '\0', MAXPATH);
             pathclient = strcpy(pathclient, pathFile);
+            pathclient = strcat(pathclient, "/");
             pathclient = strcat(pathclient, dir_prefix);
             pathclient = strcat(pathclient, clientname);
             pathclient = strcat(pathclient, "/");
             if ((clientdir = opendir(pathclient)) == NULL)
             {
-                fprintf(stderr, "Can't open %s\n", pathclient);
+                fprintf(stderr, "Can'et open %s\n", pathclient);
                 return 0;
             }
             while((myfile = readdir(clientdir)) != NULL)
             {
-                if (myfile->d_type == DT_REG){
+                if (myfile->d_type == DT_REG)
+                {
                     if(myfile->d_name[strlen(myfile->d_name)-1] != '~')
                     {
                         FILE_INFO fileinf;
@@ -660,10 +708,10 @@ void initServer()
 int main (int argc, char *argv[])
 {
     running_ = 1;
-    int id_client, id_thread;
+    int socket_user, id_thread;
     char id_user[MAXNAME];
     pthread_t thread;
-    ARGS args;
+    USER_INFO user_info;
     fprintf(stderr, "%d\n", argc);
     if(argc > 1) port_ = atoi(argv[1]);
 
@@ -674,13 +722,13 @@ int main (int argc, char *argv[])
     initServer();
     while(running_)
     {
-        id_client = acceptLoop();
-        if(id_client >= 0)
+        socket_user = acceptLoop();
+        if(socket_user >= 0)
         {
-            safe_recv(id_client, id_user, MAXNAME);
-            strcpy(args.arg1, id_user);
-            args.arg2 = id_client;
-            pthread_create(&thread, NULL, client_handling, (void *)&args); //Thread que processa login/requisições
+            safe_recv(socket_user, id_user, MAXNAME);
+            strcpy(user_info.username, id_user);
+            user_info.socket = socket_user;
+            pthread_create(&thread, NULL, client_handling, (void *)&user_info); //Thread que processa login/requisições
         }
     }
 

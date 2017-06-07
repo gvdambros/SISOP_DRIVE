@@ -18,14 +18,14 @@ typedef struct client{
     pthread_mutex_t mutex;
 } CLIENT;
 
-typedef struct arg_struct {
-    char arg1[MAXNAME];
-    int arg2;
-} ARGS;
+typedef struct user_info {
+    char username[MAXNAME];
+    int socket;
+} USER_INFO;
 
-void sync_server();
-void receive_file(char *file);
-void get_file(char *file);
+void sync_server(CLIENT client, int socket);
+void receive_file(char *file, CLIENT* client, int socket);
+void send_file(char *file, CLIENT client, int socket);
 
 // ADDED STUFF
 //Structs

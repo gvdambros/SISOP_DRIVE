@@ -70,7 +70,7 @@ void set_dir() {
     dir = malloc(MAXPATH);
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
-    dir = strcat(dir, "/Dropbox/sync_dir_");
+    dir = strcat(dir, "/sync_dir_");
     dir = strcat(dir, name_client);
     dir = strcat(dir, "/");
 
@@ -172,7 +172,7 @@ int sync_client()
         while (acc < size)
         {
             // receive at most 1MB of data
-            read = recv(socket_client, buf, size, 0);
+            read = recv(socket_client, buf, BUFFER_SIZE, 0);
 
             // write the received data in the file
             fwrite(buf, sizeof(char), read, fp);
@@ -226,7 +226,7 @@ void get_file(char *file)
     while (acc < size)
     {
         // receive at most 1MB of data
-        int read = recv(socket_client, buf, size, 0);
+        int read = recv(socket_client, buf, BUFFER_SIZE, 0);
 
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
@@ -315,7 +315,7 @@ void send_file(char *file)
 
     while(offset < fs)
     {
-        int bytes_read = fread(buffer, sizeof(char), fs, fp);
+        int bytes_read = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
         sent_bytes = send(socket_client, (char*) buffer, bytes_read, 0);
         offset += sent_bytes;
     }
@@ -425,8 +425,8 @@ int main(int argc, char *argv[])
 
     if(argc <= 3)
     {
-        printf("call ./dropboxClient fulano endereço porta\n");
-        //return -1;
+        printf("call ./client fulano endereço porta\n");
+        return -1;
     }
 
     printf("%s %s\n",argv[2], argv[3]);
