@@ -585,9 +585,12 @@ void receive_file(char *file, CLIENT *client, int socket)
         int acc = 0, read, maxRead;
         while (acc < fs)
         {
+            int maxRead;
+            if( fs - acc < BUFFER_SIZE) maxRead = fs - acc;
+            else maxRead = BUFFER_SIZE;
 
             // receive at most 1MB of data
-            read = recv(socket, buffer, BUFFER_SIZE, 0);
+            read = recv(socket, buffer, maxRead, 0);
 
             // write the received data in the file
             fwrite(buffer, sizeof(char), read, fp);

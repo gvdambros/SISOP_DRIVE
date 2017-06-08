@@ -61,7 +61,8 @@ void close_connection()
     close(socket_client);
 }
 
-void set_dir() {
+void set_dir()
+{
 
     char *dir, *user; // nome do usuario linux
 
@@ -110,9 +111,11 @@ int sync_client()
     safe_sendINT(socket_client, &numberFiles);
 
     i = 0;
-    while(i < numberFiles){
+    while(i < numberFiles)
+    {
         dp = readdir(dfd);
-        if (dp->d_type == DT_REG || dp->d_type == DT_UNKNOWN){
+        if (dp->d_type == DT_REG || dp->d_type == DT_UNKNOWN)
+        {
             i++;
             struct stat stbuf;
             sprintf( pathFile, "%s/%s",dropboxDir_,dp->d_name) ;
@@ -144,11 +147,13 @@ int sync_client()
     // receive number of files that are not sync
     safe_recvINT(socket_client, &numberFiles);
 
-    if (numberFiles > 0) {
+    if (numberFiles > 0)
+    {
         fprintf(stderr, "%d vao ser recebidos\n",numberFiles );
     }
 
-    for(i = 0; i < numberFiles; i++){
+    for(i = 0; i < numberFiles; i++)
+    {
 
         // receive file name from server
         safe_recv(socket_client, fileName, MAXFILENAME);
@@ -172,8 +177,11 @@ int sync_client()
         int acc = 0, read = 0;
         while (acc < size)
         {
+            int maxRead;
+            if( size - acc < BUFFER_SIZE) maxRead = size - acc;
+            else maxRead = BUFFER_SIZE;
             // receive at most 1MB of data
-            read = recv(socket_client, buf, BUFFER_SIZE, 0);
+            read = recv(socket_client, buf, maxRead, 0);
 
             // write the received data in the file
             fwrite(buf, sizeof(char), read, fp);
@@ -225,8 +233,12 @@ void get_file(char *file)
     int acc = 0;
     while (acc < size)
     {
+
+        int maxRead;
+        if( size - acc < BUFFER_SIZE) maxRead = size - acc;
+        else maxRead = BUFFER_SIZE;
         // receive at most 1MB of data
-        int read = recv(socket_client, buf, BUFFER_SIZE, 0);
+        int read = recv(socket_client, buf, maxRead, 0);
 
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
@@ -276,20 +288,24 @@ void send_file(char *file)
 
     sem_wait(&runningRequest);
 
-    if( strrchr(file, '/') ){
+    if( strrchr(file, '/') )
+    {
         strcpy(filename,strrchr(file, '/') + 1);
     }
-    else{
+    else
+    {
         strcpy(filename, file);
     }
     fprintf(stderr, "Nome do arquivo: %s\n", filename);
 
-    if((fs = file_size(file)) < 0){
+    if((fs = file_size(file)) < 0)
+    {
         fs = 0;
     }
 
     time_t *lastModified;
-    if( (lastModified = file_lastModifier(file)) == NULL){
+    if( (lastModified = file_lastModifier(file)) == NULL)
+    {
         fs = 0;
         time_t aux = time(NULL);
         lastModified = &aux;
