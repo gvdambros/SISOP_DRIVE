@@ -23,7 +23,9 @@ typedef struct user_info {
     int socket;
 } USER_INFO;
 
-void sync_server();
+void sync_server(CLIENT client, int socket);
+void receive_file(char *file, CLIENT *client, int socket);
+void send_file(char *file, CLIENT client, int socket);
 
 // ADDED STUFF
 //Structs

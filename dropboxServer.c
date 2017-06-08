@@ -119,7 +119,7 @@ CLIENT_LIST* verifyUser(char *id_user)
     {
 
         //Registra e retorna um novo cliente
-        printf("Registrando usuário\n");
+        printf("Registrando usuário: %s\n", id_user);
         new_user.devices[0] = 0;
         new_user.devices[1] = 0;
         new_user.logged_in = 0;

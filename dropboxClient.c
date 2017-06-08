@@ -149,7 +149,7 @@ int sync_client()
 
     if (numberFiles > 0)
     {
-        fprintf(stderr, "%d vao ser recebidos\n",numberFiles );
+        //fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n",numberFiles );
     }
 
     for(i = 0; i < numberFiles; i++)
@@ -171,7 +171,7 @@ int sync_client()
 
         FILE *fp = fopen(pathFile, "w");
 
-        fprintf(stderr, "recebendo %s %d bytes\n", fileName, size);
+        //fprintf(stderr, "Recebendo: %s, tamanho: %d bytes\n", fileName, size);
 
         // while it didn't read all the file, keep reading
         int acc = 0, read = 0;
@@ -185,8 +185,6 @@ int sync_client()
 
             // write the received data in the file
             fwrite(buf, sizeof(char), read, fp);
-
-            printf("dados: %d\n", read);
             acc += read;
         }
 
@@ -243,7 +241,6 @@ void get_file(char *file)
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
 
-        printf("dados: %d\n", read);
         acc += read;
     }
 
@@ -407,8 +404,8 @@ void *sync_function()
                 if ( (event->mask & IN_CREATE) || (event->mask & IN_CLOSE_WRITE) || (event->mask & IN_MOVED_TO))
                 {
                     // server has to decide if it was a new file or a modification by seeing if the file already exists.
-                    sprintf( pathFile, "%s%s",dropboxDir_,event->name) ;
-                    fprintf(stderr, "add %s\n", pathFile);
+                    sprintf(pathFile, "%s%s",dropboxDir_,event->name) ;
+                    fprintf(stderr, "Arquivo modificado na pasta local:  %s\n", event->name);
                     send_file(pathFile);
                 }
                 else if ( (event->mask & IN_DELETE) || (event->mask & IN_MOVED_FROM) )
