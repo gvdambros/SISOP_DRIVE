@@ -65,6 +65,7 @@ void set_dir() {
 
     char *dir, *user; // nome do usuario linux
 
+
     user = getLinuxUser();
 
     dir = malloc(MAXPATH);
@@ -207,12 +208,11 @@ void get_file(char *file)
 
     sem_wait(&runningRequest);
     send(socket_client, request, MAXREQUEST, 0);
-
     // receive file size from server
     int size;
     int sent_bytes = safe_recvINT(socket_client, &size);
 
-    fprintf(stderr, "size: %d\n", size);
+    fprintf(stderr, "Tamanho: %d\n", size);
 
     // receive last modified time (time_t)
     time_t lm;
@@ -243,7 +243,7 @@ void get_file(char *file)
     utime(file, &new_times);
 
     sem_post(&runningRequest);
-
+    fprintf(stderr, "Download completo\n\n");
     return;
 }
 
@@ -282,7 +282,7 @@ void send_file(char *file)
     else{
         strcpy(filename, file);
     }
-    fprintf(stderr, "filename: %s\n", filename);
+    fprintf(stderr, "Nome do arquivo: %s\n", filename);
 
     if((fs = file_size(file)) < 0){
         fs = 0;
@@ -300,7 +300,6 @@ void send_file(char *file)
     strcpy(request,"upload ");
     strcat(request, filename);
     send(socket_client, request, MAXREQUEST, 0);
-    fprintf(stderr, "request: %s\n", request);
 
     // send file size
     safe_sendINT(socket_client, &fs);
@@ -311,7 +310,7 @@ void send_file(char *file)
     FILE *fp;
     if(fs) fp = fopen(file, "r");
 
-    fprintf(stderr, "size: %d\n", fs);
+    fprintf(stderr, "Tamanho: %d\n", fs);
 
     while(offset < fs)
     {
@@ -320,7 +319,7 @@ void send_file(char *file)
         offset += sent_bytes;
     }
 
-    printf("sending done\n");
+    printf("Envio completo\n\n");
 
     if(fs) fclose(fp);
 
@@ -439,7 +438,7 @@ int main(int argc, char *argv[])
     else
     {
         strcpy(name_client, argv[1]);
-        fprintf(stderr, "name: %s\n", name_client);
+        fprintf(stderr, "Nome de usuário: %s\nMáquina: ", name_client);
         send_id(argv[1]);
     }
 
@@ -449,6 +448,7 @@ int main(int argc, char *argv[])
 
     running = 1;
 
+    fprintf(stderr, "\n", name_client);
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
 
     char cmd_line[MAXREQUEST] = "";
@@ -466,20 +466,17 @@ int main(int argc, char *argv[])
         }
         else if(!strcmp(userCmd.cmd, "download"))
         {
-            get_file(userCmd.param);
             printf("Download\n");
-
+            get_file(userCmd.param);
         }
         else if(!strcmp(userCmd.cmd, "list"))
         {
-            list_files();
             printf("List\n");
-
+            list_files();
         }
         else if(!strcmp(userCmd.cmd, "get_sync_dir"))
         {
             printf("Get Sync DIR\n");
-
         }
         else if(!strcmp(userCmd.cmd, "exit"))
         {
