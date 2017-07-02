@@ -98,50 +98,32 @@ int sync_client()
     strcpy(request,"sync");
     send(socket_client, request, MAXREQUEST, 0);
 
-    struct dirent *dp;
-    DIR *dfd;
 
-    if ((dfd = opendir(dropboxDir_)) == NULL)
-    {
-        fprintf(stderr, "Can't open %s\n", dropboxDir_);
-        return 0;
-    }
 
-    int numberFiles = numberOfFilesInDir(dropboxDir_);
+    int numberFiles = numberOfFiles_ClientDir(client_info);
     safe_sendINT(socket_client, &numberFiles);
-
     i = 0;
+
+    fprintf(stderr, "number of file: %d\n", numberFiles);
+
     while(i < numberFiles)
     {
-        dp = readdir(dfd);
-        if (dp->d_type == DT_REG || dp->d_type == DT_UNKNOWN)
-        {
-            i++;
-            struct stat stbuf;
-            sprintf( pathFile, "%s/%s",dropboxDir_,dp->d_name) ;
-            if( stat(pathFile,&stbuf ) == -1 )
-            {
-                fprintf(stderr, "Unable to stat file: %s\n", pathFile) ;
-                return;
-            }
 
-            // Send name of file
-            strcpy(request,dp->d_name);
-            send(socket_client, request, MAXFILENAME, 0);
+        int j = getIDoOfFileAtPosition_ClientDir(i++);
+
+        fprintf(stderr, "file: %s %d\n", client_info.file_info[j].name, j);
+
+        // Send name of file
+        strcpy(request, client_info.file_info[j].name);
+        send(socket_client, request, MAXFILENAME, 0);
 
 
-            // Send last modified time (time_t)
-            send(socket_client, &(stbuf.st_mtime), sizeof(stbuf.st_mtime), 0);
+        // Send last modified time (time_t)
+        time_t lm = client_info.file_info[j].lastModified;
+        send(socket_client, &lm, sizeof(time_t), 0);
 
-            char buff[20];
-            struct tm * timeinfo;
-            timeinfo = localtime (&stbuf.st_mtime);
-            strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
-
-            //fprintf(stderr,"%s\n",dp->d_name) ;
-            //fprintf(stderr,"%s\n",buff) ;
-        }
-
+        //fprintf(stderr,"%s\n",dp->d_name) ;
+        //fprintf(stderr,"%s\n",buff) ;
     }
 
     // receive number of files that are not sync
@@ -149,7 +131,7 @@ int sync_client()
 
     if (numberFiles > 0)
     {
-        //fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n",numberFiles );
+        fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n",numberFiles );
     }
 
     for(i = 0; i < numberFiles; i++)
@@ -168,6 +150,7 @@ int sync_client()
             fprintf(stderr, "O arquivo %s vai ser deletado.\n", serverCmd.param);
             sprintf( pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
             remove(pathFile);
+            deleteFile_ClientDir(&client_info, serverCmd.param);
         }
         else if(!strcmp(serverCmd.cmd, "add"))
         {
@@ -208,12 +191,27 @@ int sync_client()
             new_times.actime = time(NULL);
             new_times.modtime = lm;    /* set mtime to current time */
             utime(pathFile, &new_times);
+
+            addFile_ClientDir(&client_info, serverCmd.param, size, lm);
+
         }
 
     }
     sem_post(&runningRequest);
 
     return 0;
+}
+
+time_t getTimeServer()
+{
+    time_t lm;
+    char* request = (char*) malloc(MAXREQUEST);
+    strcpy(request,"time");
+    sem_wait(&runningRequest);
+    send(socket_client, request, MAXREQUEST, 0);
+    safe_recv(socket_client, &lm, sizeof(time_t));
+    sem_post(&runningRequest);
+    return lm;
 }
 
 void get_file(char *file)
@@ -293,6 +291,45 @@ void list_files()
     closedir(mydir);
 }
 
+void initClient()
+{
+    char *pathFile = (char*) malloc(MAXPATH);
+    char* fileName = (char*) malloc( MAXFILENAME );
+    int i=0;
+
+    struct dirent *dp;
+    DIR *dfd;
+
+    if ((dfd = opendir(dropboxDir_)) == NULL)
+    {
+        fprintf(stderr, "Can't open %s\n", dropboxDir_);
+        return 0;
+    }
+
+    int numberFiles = numberOfFilesInDir(dropboxDir_);
+
+    while(i < numberFiles)
+    {
+        dp = readdir(dfd);
+        if (dp->d_type == DT_REG || dp->d_type == DT_UNKNOWN)
+        {
+            struct stat stbuf;
+            sprintf( pathFile, "%s/%s",dropboxDir_,dp->d_name) ;
+            if( stat(pathFile,&stbuf ) == -1 )
+            {
+                fprintf(stderr, "Unable to stat file: %s\n", pathFile) ;
+                return;
+            }
+
+            fprintf(stderr, "file: %s %d\n", dp->d_name, stbuf.st_size) ;
+            strcpy( client_info.file_info[i].name ,dp->d_name);
+            client_info.file_info[i].size = stbuf.st_size;
+            client_info.file_info[i].lastModified = stbuf.st_mtime;
+            i++;
+        }
+    }
+}
+
 void send_file(char *file)
 {
     char *request = (char*) malloc(MAXREQUEST), *filename = malloc(MAXFILENAME);
@@ -317,7 +354,7 @@ void send_file(char *file)
     }
 
     time_t *lastModified;
-    if( (lastModified = file_lastModifier(file)) == NULL)
+    if( (lastModified = file_lastModified(file)) == NULL)
     {
         fs = 0;
         time_t aux = time(NULL);
@@ -367,6 +404,7 @@ void delete_file(char *file)
     strcat(request, file);
     sem_wait(&runningRequest);
     send(socket_client, request, MAXREQUEST, 0);
+    deleteFile_ClientDir(&client_info, file);
     sem_post(&runningRequest);
     return;
 }
@@ -422,7 +460,21 @@ void *sync_function()
                     // server has to decide if it was a new file or a modification by seeing if the file already exists.
                     sprintf(pathFile, "%s%s",dropboxDir_,event->name) ;
                     fprintf(stderr, "Arquivo modificado na pasta local:  %s\n", event->name);
+
+                    time_t t0 = time(NULL);
+                    time_t serverTime = getTimeServer();
+                    time_t t1 = time(NULL);
+                    time_t clientTime = serverTime + (t1-t0)/2;
+
+                    addFile_ClientDir(&client_info, event->name, file_size(pathFile), clientTime);
+
+                    struct utimbuf new_times;
+                    new_times.actime = time(NULL);
+                    new_times.modtime = clientTime;    /* set mtime to current time */
+                    utime(pathFile, &new_times);
+
                     send_file(pathFile);
+
                 }
                 else if ( (event->mask & IN_DELETE) || (event->mask & IN_MOVED_FROM) )
                 {
@@ -473,12 +525,16 @@ int main(int argc, char *argv[])
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     set_dir();
+    initFiles_ClientDir(&client_info);
+    initClient();
+    printFiles_ClientDir(client_info);
     sync_client();
 
     running = 1;
 
     fprintf(stderr, "\n", name_client);
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
+
 
     char cmd_line[MAXREQUEST] = "";
     user_cmd userCmd;
@@ -502,6 +558,16 @@ int main(int argc, char *argv[])
         {
             printf("List\n");
             list_files();
+        }
+        else if(!strcmp(userCmd.cmd, "print"))
+        {
+            printf("Print\n");
+            printFiles_ClientDir(client_info);
+        }
+        else if(!strcmp(userCmd.cmd, "time"))
+        {
+            printf("Time\n");
+            fprintf (stderr, "%lld\n", (long long) getTimeServer());
         }
         else if(!strcmp(userCmd.cmd, "get_sync_dir"))
         {

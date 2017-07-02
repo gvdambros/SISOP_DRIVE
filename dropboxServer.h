@@ -4,20 +4,6 @@
 #include "dropboxUtil.h"
 #include <pthread.h>
 
-typedef struct file_info{
-    char name[MAXFILENAME];
-    time_t time_lastModified;
-    int size;
-} FILE_INFO;
-
-typedef struct client{
-    int devices[MAXDEVICES];
-    char userid[MAXNAME];
-    FILE_INFO file_info[MAXFILES];
-    int logged_in;
-    pthread_mutex_t mutex;
-} CLIENT;
-
 typedef struct user_info {
     char username[MAXNAME];
     int socket;

@@ -25,7 +25,7 @@ int file_size(char *file)
     return file_stat.st_size;
 }
 
-time_t* file_lastModifier(char *file){
+time_t* file_lastModified(char *file){
     time_t *t = (time_t*) malloc(sizeof(time_t));
     struct stat stbuf;
     if(stat(file, &stbuf) < 0){
@@ -125,4 +125,141 @@ int numberOfFilesInDir(char *dir)
     }
     closedir(dirp);
     return file_count;
+}
+
+
+void printFiles_ClientDir(CLIENT client)
+{
+    int i;
+    fprintf(stderr, "files of %s\n", client.userid);
+    for(i = 0; i < MAXFILES; i ++)
+    {
+        if(client.file_info[i].size != -1)
+        {
+
+            char buff[20];
+
+            struct tm * timeinfo;
+
+            timeinfo = localtime (&(client.file_info[i].lastModified));
+
+            strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
+            fprintf(stderr, "aqui\n");
+            fprintf(stderr, "id: %d file: %s size: %d last: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
+            fprintf(stderr, "aqui\n");
+        }
+    }
+    return;
+}
+
+int addFile_ClientDir(CLIENT *client, char *file, int size, time_t lastModified)
+{
+    int i;
+    if( (i = findFile_ClientDir(*client, file)) < 0)
+    {
+        // If file doesn't exist
+        if((i = nextEmptySpace_ClientDir(*client)) < 0) return -1;
+
+    }
+
+    fprintf(stderr, "Arquivo adicionado\n");
+    strcpy( client->file_info[i].name, file);
+    client->file_info[i].size = size;
+    client->file_info[i].lastModified = lastModified;
+
+    return 0;
+}
+
+int nextEmptySpace_ClientDir(CLIENT client)
+{
+    int i = 0;
+    while(i < MAXFILES && client.file_info[i].size != -1) i++;
+    if(i == MAXFILES)
+    {
+        // if dir is full
+        return -1;
+    }
+    return i;
+
+}
+
+int findFile_ClientDir(CLIENT client, char *file)
+{
+    int i = 0;
+    while(i < MAXFILES && strcmp(client.file_info[i].name, file))
+    {
+        //fprintf(stderr, "File: %s\n", client.file_info[i].name);
+        i++;
+    }
+    if(i >= MAXFILES)
+    {
+        return -1;
+    }
+    return i;
+}
+
+int deleteFile_ClientDir(CLIENT *client, char *file)
+{
+    int i = 0;
+    fprintf(stderr, "Excluindo");
+    if((i = findFile_ClientDir(*client, file)) == -1)
+    {
+        return -1;
+    }
+    fprintf(stderr, "%s %s %d", file, client->file_info[i].name, i);
+    client->file_info[i].size = -1;
+    strcpy(client->file_info[i].name,"");
+    return 0;
+}
+
+int numberOfFiles_ClientDir(CLIENT client)
+{
+    int i = 0, count = 0;
+    for(i = 0; i < MAXFILES; i ++)
+    {
+        if(client.file_info[i].size != -1)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+int getIDoOfFileAtPosition_ClientDir(CLIENT client, int p)
+{
+    int i;
+    for(i = 0; i < MAXFILES && p >= 0 ; i++)
+    {
+        if(client.file_info[i].size != -1)
+        {
+
+            p--;
+        }
+    }
+    if(p >= 0) return -1;
+    return i-1;
+}
+
+int isFull_ClientDir(CLIENT client)
+{
+    int i;
+    for(i = 0; i < MAXFILES; i ++)
+    {
+        if(client.file_info[i].size == -1)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+void initFiles_ClientDir(CLIENT *client)
+{
+    int i;
+    for(i = 0; i < MAXFILES; i++)
+    {
+        client->file_info[i].size = -1;
+        strcpy(client->file_info[i].name, "");
+    }
+    return;
 }
