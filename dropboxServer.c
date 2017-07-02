@@ -114,6 +114,8 @@ CLIENT_LIST* verifyUser(char *id_user)
     CLIENT_LIST *existing_user;
 
     strcpy(new_user.userid, id_user);
+
+    pthread_mutex_lock(&server_mutex_);
     existing_user = searchInClientList(new_user);
     if (existing_user == NULL)
     {
@@ -126,7 +128,6 @@ CLIENT_LIST* verifyUser(char *id_user)
         initFiles_ClientDir(&new_user);
         pthread_mutex_init(&(new_user.mutex), NULL);
 
-        pthread_mutex_lock(&server_mutex_);
         if (insertList(new_user) < 0)
         {
             printf("Falha no registro do usuário\n");
