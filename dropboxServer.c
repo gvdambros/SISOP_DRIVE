@@ -359,8 +359,9 @@ int findFile_ClientDir(CLIENT client, char *file)
 int deleteFile_ClientDir(CLIENT *client, char *file)
 {
     int i = 0;
-        fprintf(stderr, "Excluindo");
-    while(i < MAXFILES && strcmp(client->file_info[i].name, file)) {
+    fprintf(stderr, "Excluindo");
+    while(i < MAXFILES && strcmp(client->file_info[i].name, file))
+    {
         fprintf(stderr, "%s %s ", file, client->file_info[i].name);
         i++;
     }
@@ -412,9 +413,12 @@ void initFiles_ClientDir(CLIENT *client)
 void sync_server(CLIENT client, int socket)
 {
     fprintf(stderr, "Sync iniciado: ");
-    int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(client), i, j, count = 0;
+    int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(client), i, j, count = 0, numberOfDeletedFiles = 0;
     int *bitMap = calloc(MAXFILES, sizeof(int));
     char buffer[BUFFER_SIZE], *pathFile = malloc(MAXPATH), *user = malloc(MAXNAME), *dir = malloc(MAXPATH), *filename = malloc(MAXFILENAME);
+    char* request = (char*) malloc(MAXREQUEST);
+
+    FILE_INFO deletedFiles[MAXFILES];
 
     user = getLinuxUser();
 
@@ -424,8 +428,9 @@ void sync_server(CLIENT client, int socket)
     dir = strcat(dir, client.userid);
     dir = strcat(dir, "/");
     // bitMap[i] == 0 -> espaço vazio
-    // bitMap[i] == 1 -> arquivo synx
-    // bitMap[i] == 2 -> arquivo não existe no usuario ou não sync
+    // bitMap[i] == 1 -> arquivo sync
+    // bitMap[i] == 2 -> arquivo não existe no usuario ou não esta sync
+
 
     for(i = 0; i < MAXFILES; i++)
     {
@@ -452,21 +457,22 @@ void sync_server(CLIENT client, int socket)
         // find file in the client dir
         if( (j = findFile_ClientDir(client, filename)) < 0)
         {
-            continue;
+            // if this file is not in server, another client deleted it.
+            strcpy(deletedFiles[numberOfDeletedFiles++].name, filename);
         }
-
         // if the file in the user computer is sync
-        if(!difftime(lastModified, client.file_info[j].time_lastModified ))
+        else if(!difftime(lastModified, client.file_info[j].time_lastModified ))
         {
             fprintf(stderr, " (sincronizado)\n", filename);
             bitMap[j] = 1;
             count++;
-        } else fprintf(stderr, "\n");
+        }
+        else fprintf(stderr, "\n");
 
     }
 
     // send number of files that are not sync
-    count = numberFilesServer - count;
+    count = numberOfDeletedFiles + numberFilesServer - count;
     safe_sendINT(socket, &count);
 
     fprintf(stderr, "%d vão ser enviados dos %d arquivos no servidor\n", count, numberFilesServer);
@@ -483,7 +489,11 @@ void sync_server(CLIENT client, int socket)
 
             fprintf(stderr, "enviando %s %d bytes\n", client.file_info[i].name, fs);
 
-            send(socket, client.file_info[i].name, MAXFILENAME, 0);
+            strcpy(request,"add ");
+
+            strcat(request, client.file_info[i].name);
+            send(socket, request, MAXREQUEST, 0);
+
             safe_sendINT(socket, &fs);
             send(socket, &(client.file_info[i].time_lastModified), sizeof(time_t), 0);
 
@@ -499,8 +509,14 @@ void sync_server(CLIENT client, int socket)
             }
 
             fclose(fp);
-
         }
+    }
+
+    for(i = 0; i < numberOfDeletedFiles; i++)
+    {
+        strcpy(request,"delete ");
+        strcat(request, deletedFiles[i].name);
+        send(socket, request, MAXREQUEST, 0);
     }
 
     fprintf(stderr, "Sync completo\n------------------------------------\n\n");

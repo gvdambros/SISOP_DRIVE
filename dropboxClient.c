@@ -155,45 +155,61 @@ int sync_client()
     for(i = 0; i < numberFiles; i++)
     {
 
-        // receive file name from server
-        safe_recv(socket_client, fileName, MAXFILENAME);
+        user_cmd serverCmd;
 
-        // receive file size from server
-        int size;
-        safe_recvINT(socket_client, &size);
+        // receive request from server
+        safe_recv(socket_client, request, MAXREQUEST);
 
-        // receive last modified time (time_t)
-        time_t lm;
-        safe_recv(socket_client, &lm, sizeof(time_t));
+        serverCmd = string2userCmd(request);
 
-        pathFile = strcpy(pathFile, dropboxDir_);
-        pathFile = strcat(pathFile, fileName);
 
-        FILE *fp = fopen(pathFile, "w");
-
-        //fprintf(stderr, "Recebendo: %s, tamanho: %d bytes\n", fileName, size);
-
-        // while it didn't read all the file, keep reading
-        int acc = 0, read = 0;
-        while (acc < size)
+        if(!strcmp(serverCmd.cmd, "delete"))
         {
-            int maxRead;
-            if( size - acc < BUFFER_SIZE) maxRead = size - acc;
-            else maxRead = BUFFER_SIZE;
-            // receive at most 1MB of data
-            read = recv(socket_client, buf, maxRead, 0);
+            fprintf(stderr, "O arquivo %s vai ser deletado.\n", serverCmd.param);
+            sprintf( pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
+            remove(pathFile);
+        }
+        else if(!strcmp(serverCmd.cmd, "add"))
+        {
+            fprintf(stderr, "O arquivo %s vai ser adicionado.\n", serverCmd.param);
+            // receive file size from server
+            int size;
+            safe_recvINT(socket_client, &size);
 
-            // write the received data in the file
-            fwrite(buf, sizeof(char), read, fp);
-            acc += read;
+            // receive last modified time (time_t)
+            time_t lm;
+            safe_recv(socket_client, &lm, sizeof(time_t));
+
+            pathFile = strcpy(pathFile, dropboxDir_);
+            pathFile = strcat(pathFile, serverCmd.param);
+
+            FILE *fp = fopen(pathFile, "w");
+
+            //fprintf(stderr, "Recebendo: %s, tamanho: %d bytes\n", fileName, size);
+
+            // while it didn't read all the file, keep reading
+            int acc = 0, read = 0;
+            while (acc < size)
+            {
+                int maxRead;
+                if( size - acc < BUFFER_SIZE) maxRead = size - acc;
+                else maxRead = BUFFER_SIZE;
+                // receive at most 1MB of data
+                read = recv(socket_client, buf, maxRead, 0);
+
+                // write the received data in the file
+                fwrite(buf, sizeof(char), read, fp);
+                acc += read;
+            }
+
+            fclose(fp);
+
+            struct utimbuf new_times;
+            new_times.actime = time(NULL);
+            new_times.modtime = lm;    /* set mtime to current time */
+            utime(pathFile, &new_times);
         }
 
-        fclose(fp);
-
-        struct utimbuf new_times;
-        new_times.actime = time(NULL);
-        new_times.modtime = lm;    /* set mtime to current time */
-        utime(pathFile, &new_times);
     }
     sem_post(&runningRequest);
 

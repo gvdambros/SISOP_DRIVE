@@ -1,3 +1,7 @@
+## all
+
+all: server client
+
 ## make client
 
 client: dropboxClient.o dropboxUtil.o
@@ -15,10 +19,6 @@ dropboxServer.o: dropboxServer.c
 	gcc -c dropboxServer.c
 dropboxUtil.o: dropboxUtil.c
 	gcc -c dropboxUtil.c 
-
-##
-
-all: server client
 
 ## make clean
 clean:
