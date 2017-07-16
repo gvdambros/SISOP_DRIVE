@@ -64,4 +64,6 @@ int isFull_ClientDir(CLIENT client);
 
 void initFiles_ClientDir(CLIENT *client);
 
+void printCertificate(SSL *ssl);
+
 #endif // DROPBOXUTIL_H_INCLUDED

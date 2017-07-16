@@ -31,7 +31,7 @@
 
 int connect_server(char *host, int port)
 {
-    //int socket_client;
+        //TCP layer connect
     struct sockaddr_in socket_server;
     struct hostent *server;
 
@@ -333,7 +333,7 @@ void initClient()
                 return;
             }
 
-            fprintf(stderr, "file: %s %d\n", dp->d_name, stbuf.st_size) ;
+            //fprintf(stderr, "file: %s %d\n", dp->d_name, stbuf.st_size) ;
             strcpy( client_info.file_info[i].name ,dp->d_name);
             client_info.file_info[i].size = stbuf.st_size;
             client_info.file_info[i].lastModified = stbuf.st_mtime;
@@ -526,10 +526,9 @@ int main(int argc, char *argv[])
         printf("call ./client fulano endereço porta\n");
         return -1;
     }
-
     printf("%s %s\n",argv[2], argv[3]);
 
-    /////////// Estabelecendo SSL
+        // Estabelecendo SSL
     SSL_METHOD *method;
     SSL_library_init(); //Não tinha na especif
     SSL_load_error_strings();
@@ -540,8 +539,20 @@ int main(int argc, char *argv[])
         ERR_print_errors_fp(stderr);
         abort();
     }
+    if (SSL_CTX_use_certificate_file(ctx, "CertFile.pem", SSL_FILETYPE_PEM) <= 0) {
+        printf("Error setting the certificate file.\n");
+        exit(0);
+    }
+    if (SSL_CTX_use_PrivateKey_file(ctx, "KeyFile.pem", SSL_FILETYPE_PEM) <= 0) {
+        printf("Error setting the key file.\n");
+        exit(0);
+    }
+      /*Make sure the key and certificate file match*/
+    if (SSL_CTX_check_private_key(ctx) == 0) {
+        printf("Private key does not match the certificate public key\n");
+        exit(0);
+    }
     //SSL_CTX_set_verify(ctx,SSL_VERIFY_PEER,NULL);
-
     if( connect_server(argv[2], atoi( argv[3] )) < 0)
     {
         printf("connection failed\n");
@@ -551,35 +562,38 @@ int main(int argc, char *argv[])
     {
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, socket_client);
-        if (SSL_connect(ssl) == -1){
+        if (SSL_connect(ssl) < 1){
             ERR_print_errors_fp(stderr);
             return -1;
         }
-        ////////////////
-
         strcpy(name_client, argv[1]);
-        fprintf(stderr, "Nome de usuário: %s\nMáquina: ", name_client);
+        fprintf(stderr, "\n------------------------------------\nNova conexão iniciada!\nId fornecida: %s", name_client);
+
         send_id(argv[1]);
     }
 
+        //Certificado
+    printCertificate(ssl);
+    printf("\nMáquina: ");
+
+        //Inicialização
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
-    set_dir();
+    set_dir(); //set main directory
 
-    initFiles_ClientDir(&client_info);
+    initFiles_ClientDir(&client_info);  //Initialize local file list
     initClient();
-
     printFiles_ClientDir(client_info);
     sync_client();
 
     running = 1;
 
     fprintf(stderr, "\n", name_client);
-    pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
-
+    pthread_create(&sync_thread, NULL, sync_function, NULL); //Thread que verifica modificações de arquivos na pasta
 
     char cmd_line[MAXREQUEST] = "";
     user_cmd userCmd;
 
+        //Processamento de comandos
     do
     {
         gets(cmd_line);
@@ -616,28 +630,12 @@ int main(int argc, char *argv[])
         }
         else if(!strcmp(userCmd.cmd, "exit"))
         {
-            //send(socket_client, cmd_line, MAXREQUEST, 0);
             SSL_write(ssl, cmd_line, MAXREQUEST);
         }
-        else if(!strcmp(userCmd.cmd, "certificate"))
-        {
-            printf("Certificate\n");
-            X509*cert;
-            char*line;
-            cert = SSL_get_peer_certificate(ssl);
-            if (cert != NULL){
-                line= X509_NAME_oneline(X509_get_subject_name(cert),0,0);
-                printf("Subject: %s\n", line);
-                free(line);
-                line = X509_NAME_oneline(X509_get_issuer_name(cert),0,0);
-                printf("Issuer: %s\n", line);
-            }
-        }
-
     }
     while(strcmp(userCmd.cmd, "exit"));
 
-    printf("Finishing program...\n");
+    printf("Finalizando programa...\n");
 
     // kill sync thread
     running = 0;

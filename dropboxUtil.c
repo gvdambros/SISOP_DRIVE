@@ -138,7 +138,7 @@ int numberOfFilesInDir(char *dir)
 void printFiles_ClientDir(CLIENT client)
 {
     int i;
-    fprintf(stderr, "Files:\n");
+    fprintf(stderr, "Arquivos:\n");
     for(i = 0; i < MAXFILES; i ++)
     {
         if(client.file_info[i].size != -1)
@@ -151,7 +151,7 @@ void printFiles_ClientDir(CLIENT client)
             timeinfo = localtime (&(client.file_info[i].lastModified));
 
             strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
-            fprintf(stderr, "id: %d file: %s size: %d last: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
+            fprintf(stderr, "id: %d | Arquivo: %s | Tamanho: %d | Última modif.: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
         }
     }
     return;
@@ -267,4 +267,20 @@ void initFiles_ClientDir(CLIENT *client)
         strcpy(client->file_info[i].name, "");
     }
     return;
+}
+
+void printCertificate(SSL *ssl){
+    //Impressão do certificado SSL
+    X509 *cert;
+    char *line;
+    cert = SSL_get_peer_certificate(ssl);
+    if (cert != NULL){
+        printf("\nxxx Certificado: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+        line= X509_NAME_oneline(X509_get_subject_name(cert),0,0);
+        printf(" Subject: %s\n", line);
+        free(line);
+        line = X509_NAME_oneline(X509_get_issuer_name(cert),0,0);
+        printf(" Issuer: %s\n", line);
+        printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+    } else printf("Certificate not validated \n");
 }

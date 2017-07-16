@@ -214,6 +214,7 @@ void client_handling(void* arg)
 
     dir = malloc(MAXPATH);
     pathFile = malloc(MAXPATH);
+    printf("Máquina do usuário: ");
     user = getLinuxUser();
 
     dir = strcpy(dir, "/home/");
@@ -278,11 +279,12 @@ void client_handling(void* arg)
         }
         else if (strcmp(commandLine.cmd, "exit") == 0)
         {
-            fprintf(stderr, "Saindo...\n\n");
+            fprintf(stderr, "Liberando serviços\n");
             clientLogout(&current_client->cli, device); //Realiza o logout
 
             SSL_free(ssl);
             close(socket_user);
+            fprintf(stderr, "Conexão finalizada\n------------------------------------\n");
             pthread_exit(0);
         }
         else
@@ -297,7 +299,7 @@ void client_handling(void* arg)
 
 void sync_server(CLIENT client, int socket, SSL *ssl)
 {
-    fprintf(stderr, "Sync iniciado: ");
+    fprintf(stderr, "Sync iniciado no servidor: ");
     int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(client), i, j, count = 0, numberOfDeletedFiles = 0;
     int *bitMap = calloc(MAXFILES, sizeof(int));
     char buffer[BUFFER_SIZE], *pathFile = malloc(MAXPATH), *user = malloc(MAXNAME), *dir = malloc(MAXPATH), *filename = malloc(MAXFILENAME);
@@ -588,7 +590,7 @@ void initServer()
             pathclient = strcat(pathclient, "/");
             if ((clientdir = opendir(pathclient)) == NULL)
             {
-                fprintf(stderr, "Can'et open %s\n", pathclient);
+                fprintf(stderr, "Can't open %s\n", pathclient);
                 return 0;
             }
             while((myfile = readdir(clientdir)) != NULL)
@@ -615,7 +617,7 @@ void initServer()
         }
     }
     closedir(serverdir);
-    printf("Pronto\n\n");
+    printf("Servidor inicializado com sucesso\n\n");
 }
 
 int main (int argc, char *argv[])
@@ -628,7 +630,7 @@ int main (int argc, char *argv[])
     fprintf(stderr, "%d\n", argc);
     if(argc > 1) port_ = atoi(argv[1]);
 
-    /////////// Estabelecendo SSL
+        //Estabelecendo SSL
     SSL_METHOD *method;
     SSL_CTX *ctx;
     SSL_library_init(); //Não tinha na especif
@@ -654,52 +656,42 @@ int main (int argc, char *argv[])
         exit(0);
     }
     /*Used only if client authentication will be used*/
-    //SSL_CTX_set_verify(ctx,SSL_VERIFY_PEER,NULL);
-    /* Load certificates of trusted CAs based on file provided
+    SSL_CTX_set_verify(ctx,SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,NULL);
+
+    /* Load certificates of trusted CAs based on file provided*/
     if (SSL_CTX_load_verify_locations(ctx,"CertFile.pem",NULL)<1) {
         printf("Error setting the verify locations.\n");
         exit(0);
     }
     /* Set CA list used for client authentication. */
-    //SSL_CTX_set_client_CA_list(ctx, SSL_CTX_get_client_CA_list(ctx));
-    ////////////////
+    SSL_CTX_set_client_CA_list(ctx, SSL_CTX_get_client_CA_list(ctx));
 
+        //Inicializando Servidor
     if(connectClient() == 0){
         printf("Servidor conectado!\n");
     }
-    initList(); //Inicializa a lista de clientes
+    initList();
     initServer();
+
+        //Processamento de novos clientes
     while(running_)
     {
         SSL *ssl;
-
         struct sockaddr_in cli_addr;
         socklen_t clilen;
 
         clilen = sizeof(struct sockaddr_in);
         if ((socket_user = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
-            printf("ERROR on accept\n");
+            printf("ERROR on TCP accept\n");
         else {
             ssl = SSL_new(ctx);
             SSL_set_fd(ssl, socket_user);
             if (SSL_accept(ssl) == -1)
                 printf("ERROR on SSL_accept\n");
             else if(socket_user >= 0){
-                /////////////////Impressão do certificado
-                X509 *cert;
-                char *line;
-                cert = SSL_get_peer_certificate(ssl);
-                if (cert != NULL){
-                    printf("Certificate:\n");
-                    line= X509_NAME_oneline(X509_get_subject_name(cert),0,0);
-                    printf("Subject: %s\n", line);
-                    free(line);
-                    line = X509_NAME_oneline(X509_get_issuer_name(cert),0,0);
-                    printf("Issuer: %s\n", line);
-                } else printf("Certificado n");
-                ///////////////////
-                safe_recv(ssl, id_user, MAXNAME);
-
+                safe_recv(ssl, id_user, MAXNAME);       //Salva o Id
+                printf("------------------------------------\nNova conexão iniciada!\nId fornecida: %s", id_user);
+                printCertificate(ssl);                  //Impressão do certificado
                 strcpy(user_info.username, id_user);
                 user_info.socket = socket_user;
                 user_info.ssl = ssl;
@@ -708,6 +700,5 @@ int main (int argc, char *argv[])
             }
         }
     }
-
     return 0;
 }
