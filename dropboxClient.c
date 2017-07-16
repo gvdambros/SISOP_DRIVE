@@ -25,6 +25,10 @@
 
 #include <time.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+
 int connect_server(char *host, int port)
 {
     //int socket_client;
@@ -59,6 +63,8 @@ int connect_server(char *host, int port)
 void close_connection()
 {
     close(socket_client);
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
 }
 
 void set_dir()
@@ -96,38 +102,38 @@ int sync_client()
     // send request to sync
     // always send the biggest request possible
     strcpy(request,"sync");
-    send(socket_client, request, MAXREQUEST, 0);
-
-
+    //send(socket_client, request, MAXREQUEST, 0);
+    SSL_write(ssl, request, MAXREQUEST);
 
     int numberFiles = numberOfFiles_ClientDir(client_info);
-    safe_sendINT(socket_client, &numberFiles);
+    safe_sendINT(ssl, &numberFiles);
     i = 0;
 
-    fprintf(stderr, "number of file: %d\n", numberFiles);
+    //fprintf(stderr, "number of file: %d\n", numberFiles);
 
     while(i < numberFiles)
     {
 
         int j = getIDoOfFileAtPosition_ClientDir(i++);
 
-        fprintf(stderr, "file: %s %d\n", client_info.file_info[j].name, j);
+        //fprintf(stderr, "file: %s %d\n", client_info.file_info[j].name, j);
 
         // Send name of file
         strcpy(request, client_info.file_info[j].name);
-        send(socket_client, request, MAXFILENAME, 0);
-
+        //send(socket_client, request, MAXFILENAME, 0);
+        SSL_write(ssl, request, MAXFILENAME);
 
         // Send last modified time (time_t)
         time_t lm = client_info.file_info[j].lastModified;
-        send(socket_client, &lm, sizeof(time_t), 0);
+        //send(socket_client, &lm, sizeof(time_t), 0);
+        SSL_write(ssl, &lm, sizeof(time_t));
 
         //fprintf(stderr,"%s\n",dp->d_name) ;
         //fprintf(stderr,"%s\n",buff) ;
     }
 
     // receive number of files that are not sync
-    safe_recvINT(socket_client, &numberFiles);
+    safe_recvINT(ssl, &numberFiles);
 
     if (numberFiles > 0)
     {
@@ -140,7 +146,7 @@ int sync_client()
         user_cmd serverCmd;
 
         // receive request from server
-        safe_recv(socket_client, request, MAXREQUEST);
+        safe_recv(ssl, request, MAXREQUEST);
 
         serverCmd = string2userCmd(request);
 
@@ -157,11 +163,11 @@ int sync_client()
             fprintf(stderr, "O arquivo %s vai ser adicionado.\n", serverCmd.param);
             // receive file size from server
             int size;
-            safe_recvINT(socket_client, &size);
+            safe_recvINT(ssl, &size);
 
             // receive last modified time (time_t)
             time_t lm;
-            safe_recv(socket_client, &lm, sizeof(time_t));
+            safe_recv(ssl, &lm, sizeof(time_t));
 
             pathFile = strcpy(pathFile, dropboxDir_);
             pathFile = strcat(pathFile, serverCmd.param);
@@ -178,7 +184,9 @@ int sync_client()
                 if( size - acc < BUFFER_SIZE) maxRead = size - acc;
                 else maxRead = BUFFER_SIZE;
                 // receive at most 1MB of data
-                read = recv(socket_client, buf, maxRead, 0);
+                //read = recv(ssl, buf, maxRead, 0);
+                read = SSL_read(ssl, buf, maxRead);
+
 
                 // write the received data in the file
                 fwrite(buf, sizeof(char), read, fp);
@@ -208,8 +216,9 @@ time_t getTimeServer()
     char* request = (char*) malloc(MAXREQUEST);
     strcpy(request,"time");
     sem_wait(&runningRequest);
-    send(socket_client, request, MAXREQUEST, 0);
-    safe_recv(socket_client, &lm, sizeof(time_t));
+    //send(socket_client, request, MAXREQUEST, 0);
+    SSL_write(ssl, request, MAXREQUEST);
+    safe_recv(ssl, &lm, sizeof(time_t));
     sem_post(&runningRequest);
     return lm;
 }
@@ -227,16 +236,17 @@ void get_file(char *file)
     strcat(request, file);
 
     sem_wait(&runningRequest);
-    send(socket_client, request, MAXREQUEST, 0);
+    //send(socket_client, request, MAXREQUEST, 0);
+    SSL_write(ssl, request, MAXREQUEST);
     // receive file size from server
     int size;
-    int sent_bytes = safe_recvINT(socket_client, &size);
+    int sent_bytes = safe_recvINT(ssl, &size);
 
     fprintf(stderr, "Tamanho: %d\n", size);
 
     // receive last modified time (time_t)
     time_t lm;
-    safe_recv(socket_client, &lm, sizeof(lm));
+    safe_recv(ssl, &lm, sizeof(lm));
 
     // create the file
     FILE *fp = fopen(file, "w");
@@ -250,7 +260,9 @@ void get_file(char *file)
         if( size - acc < BUFFER_SIZE) maxRead = size - acc;
         else maxRead = BUFFER_SIZE;
         // receive at most 1MB of data
-        int read = recv(socket_client, buf, maxRead, 0);
+
+        //int read = recv(socket_client, buf, maxRead, 0);
+        int read = SSL_read(ssl, buf, maxRead);
 
         // write the received data in the file
         fwrite(buf, sizeof(char), read, fp);
@@ -365,13 +377,16 @@ void send_file(char *file)
     // always send the biggest request possible
     strcpy(request,"upload ");
     strcat(request, filename);
-    send(socket_client, request, MAXREQUEST, 0);
+
+    //send(socket_client, request, MAXREQUEST, 0);
+    SSL_write(ssl, request, MAXREQUEST);
 
     // send file size
-    safe_sendINT(socket_client, &fs);
+    safe_sendINT(ssl, &fs);
 
     // send last modified
-    send(socket_client, lastModified, sizeof(time_t), 0);
+    //send(socket_client, lastModified, sizeof(time_t), 0);
+    SSL_write(ssl, lastModified, sizeof(time_t));
 
     FILE *fp;
     if(fs) fp = fopen(file, "r");
@@ -381,7 +396,8 @@ void send_file(char *file)
     while(offset < fs)
     {
         int bytes_read = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
-        sent_bytes = send(socket_client, (char*) buffer, bytes_read, 0);
+        //sent_bytes = send(socket_client, (char*) buffer, bytes_read, 0);
+        sent_bytes = SSL_write(ssl, (char*) buffer, bytes_read);
         offset += sent_bytes;
     }
 
@@ -403,7 +419,8 @@ void delete_file(char *file)
     strcpy(request,"delete ");
     strcat(request, file);
     sem_wait(&runningRequest);
-    send(socket_client, request, MAXREQUEST, 0);
+    //send(socket_client, request, MAXREQUEST, 0);
+    SSL_write(ssl, request, MAXREQUEST);
     deleteFile_ClientDir(&client_info, file);
     sem_post(&runningRequest);
     return;
@@ -416,8 +433,9 @@ void send_id(char *id)
     // send id to server
     // always send the biggest name possible
     strcpy(request, id);
-    send(socket_client, request, MAXNAME, 0);
-
+    //send(socket_client, request, MAXNAME, 0);
+    if (SSL_write(ssl, request, MAXNAME) < 0)
+        printf("Error on send_id");
     return;
 }
 
@@ -511,6 +529,19 @@ int main(int argc, char *argv[])
 
     printf("%s %s\n",argv[2], argv[3]);
 
+    /////////// Estabelecendo SSL
+    SSL_METHOD *method;
+    SSL_library_init(); //Não tinha na especif
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    method = SSLv23_client_method(); //Na especificação dizia Lv2, mas não compilava com ela. Achei essa na documentação
+    ctx = SSL_CTX_new(method);
+    if (ctx == NULL){
+        ERR_print_errors_fp(stderr);
+        abort();
+    }
+    //SSL_CTX_set_verify(ctx,SSL_VERIFY_PEER,NULL);
+
     if( connect_server(argv[2], atoi( argv[3] )) < 0)
     {
         printf("connection failed\n");
@@ -518,6 +549,14 @@ int main(int argc, char *argv[])
     }
     else
     {
+        ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, socket_client);
+        if (SSL_connect(ssl) == -1){
+            ERR_print_errors_fp(stderr);
+            return -1;
+        }
+        ////////////////
+
         strcpy(name_client, argv[1]);
         fprintf(stderr, "Nome de usuário: %s\nMáquina: ", name_client);
         send_id(argv[1]);
@@ -525,8 +564,10 @@ int main(int argc, char *argv[])
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     set_dir();
+
     initFiles_ClientDir(&client_info);
     initClient();
+
     printFiles_ClientDir(client_info);
     sync_client();
 
@@ -575,7 +616,22 @@ int main(int argc, char *argv[])
         }
         else if(!strcmp(userCmd.cmd, "exit"))
         {
-            send(socket_client, cmd_line, MAXREQUEST, 0);
+            //send(socket_client, cmd_line, MAXREQUEST, 0);
+            SSL_write(ssl, cmd_line, MAXREQUEST);
+        }
+        else if(!strcmp(userCmd.cmd, "certificate"))
+        {
+            printf("Certificate\n");
+            X509*cert;
+            char*line;
+            cert = SSL_get_peer_certificate(ssl);
+            if (cert != NULL){
+                line= X509_NAME_oneline(X509_get_subject_name(cert),0,0);
+                printf("Subject: %s\n", line);
+                free(line);
+                line = X509_NAME_oneline(X509_get_issuer_name(cert),0,0);
+                printf("Issuer: %s\n", line);
+            }
         }
 
     }

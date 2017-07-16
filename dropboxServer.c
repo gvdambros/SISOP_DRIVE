@@ -12,6 +12,9 @@
 #include <time.h>
 #include <utime.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 #define on_error(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr); exit(1); }
 
 void initList()
@@ -89,20 +92,6 @@ int connectClient()
 
     return 0;
 }
-
-int acceptLoop()
-{
-    int new_socket_client;
-    struct sockaddr_in cli_addr;
-    socklen_t clilen;
-
-    clilen = sizeof(struct sockaddr_in);
-    if ((new_socket_client = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
-        printf("ERROR on accept\n");
-
-    return new_socket_client;
-}
-
 
 CLIENT_LIST* verifyUser(char *id_user)
 {
@@ -201,12 +190,13 @@ int clientLogout(CLIENT *client, int device)
 
 void client_handling(void* arg)
 {
-    USER_INFO user_info = *(USER_INFO*)arg;
+    USER_INFO *user_info = (USER_INFO*)arg;
 
     //Visa organizar todas as ações relacionadas a lidar com o login de um usuário e realizar suas solicitações
     char id_user[MAXNAME];
-    int socket_user = user_info.socket;
-    strcpy(id_user, user_info.username);
+    SSL *ssl = user_info->ssl;
+    int socket_user = user_info->socket;
+    strcpy(id_user, user_info->username);
 
     CLIENT_LIST* current_client = verifyUser(id_user);    //Nodo da lista contendo as infos do usuário
     int n, device = -1, n_files = 0;                //Device ativo para esta thread
@@ -240,25 +230,25 @@ void client_handling(void* arg)
 
     while (running_)
     {
-        safe_recv(socket_user, request, MAXREQUEST);
+        safe_recv(ssl, request, MAXREQUEST);
         fprintf(stderr, "------------------------------------\nSolicitacao: %s\n",request);
         user_cmd commandLine = string2userCmd(request);
 
         if (strcmp(commandLine.cmd, "sync") == 0)   //Solicitação de Sincronização (sync_client())
         {
-            sync_server(current_client->cli, socket_user);
+            sync_server(current_client->cli, socket_user, ssl   );
         }
         else if (strcmp(commandLine.cmd, "download") == 0)
         {
             strcpy(pathFile, dir);
             strcat(pathFile, commandLine.param);
-            send_file(pathFile, current_client->cli, socket_user);
+            send_file(pathFile, current_client->cli, socket_user, ssl);
         }
         else if (strcmp(commandLine.cmd, "upload") == 0)
         {
             strcpy(pathFile, dir);
             strcat(pathFile, commandLine.param);
-            receive_file(pathFile, &(current_client->cli), socket_user);
+            receive_file(pathFile, &(current_client->cli), socket_user, ssl);
         }
         else if (strcmp(commandLine.cmd, "delete") == 0)
         {
@@ -283,12 +273,15 @@ void client_handling(void* arg)
             struct tm * timeinfo;
             time ( &rawtime );
             timeinfo = localtime ( &rawtime );
-            send(socket_user, &rawtime, sizeof(time_t), 0);
+            //send(socket_user, &rawtime, sizeof(time_t), 0);
+            SSL_write(ssl, &rawtime, sizeof(time_t));
         }
         else if (strcmp(commandLine.cmd, "exit") == 0)
         {
             fprintf(stderr, "Saindo...\n\n");
             clientLogout(&current_client->cli, device); //Realiza o logout
+
+            SSL_free(ssl);
             close(socket_user);
             pthread_exit(0);
         }
@@ -302,7 +295,7 @@ void client_handling(void* arg)
 }
 
 
-void sync_server(CLIENT client, int socket)
+void sync_server(CLIENT client, int socket, SSL *ssl)
 {
     fprintf(stderr, "Sync iniciado: ");
     int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(client), i, j, count = 0, numberOfDeletedFiles = 0;
@@ -332,7 +325,7 @@ void sync_server(CLIENT client, int socket)
         }
     }
 
-    safe_recvINT(socket, &numberFilesClient);
+    safe_recvINT(ssl, &numberFilesClient);
 
     fprintf(stderr, "O usuário tem %d arquivos:\n", numberFilesClient);
 
@@ -341,8 +334,8 @@ void sync_server(CLIENT client, int socket)
     time_t lastModified;
     for(i = 0; i < numberFilesClient; i++)
     {
-        safe_recv(socket, filename, MAXFILENAME);
-        safe_recv(socket, &lastModified, sizeof(time_t));
+        safe_recv(ssl, filename, MAXFILENAME);
+        safe_recv(ssl, &lastModified, sizeof(time_t));
 
         fprintf(stderr, " - arquivo: %s ", filename);
 
@@ -365,7 +358,7 @@ void sync_server(CLIENT client, int socket)
 
     // send number of files that are not sync
     count = numberOfDeletedFiles + numberFilesServer - count;
-    safe_sendINT(socket, &count);
+    safe_sendINT(ssl, &count);
 
     fprintf(stderr, "%d vão ser enviados dos %d arquivos no servidor\n", count, numberFilesServer);
     // send files that are not sync
@@ -384,10 +377,12 @@ void sync_server(CLIENT client, int socket)
             strcpy(request,"add ");
 
             strcat(request, client.file_info[i].name);
-            send(socket, request, MAXREQUEST, 0);
+            //send(socket, request, MAXREQUEST, 0);
+            SSL_write(ssl, request, MAXREQUEST);
 
-            safe_sendINT(socket, &fs);
-            send(socket, &(client.file_info[i].lastModified), sizeof(time_t), 0);
+            safe_sendINT(ssl, &fs);
+            //send(socket, &(client.file_info[i].lastModified), sizeof(time_t), 0);
+            SSL_write(ssl, &(client.file_info[i].lastModified), sizeof(time_t));
 
             FILE *fp = fopen(pathFile, "r");
 
@@ -396,7 +391,8 @@ void sync_server(CLIENT client, int socket)
             while(offset < fs)
             {
                 int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
-                sent_bytes = send(socket, (char*) buffer, bytes_send, 0);
+                //sent_bytes = send(socket, (char*) buffer, bytes_send, 0);
+                sent_bytes = SSL_write(ssl, (char*) buffer, bytes_send);
                 offset += sent_bytes;
             }
 
@@ -408,12 +404,13 @@ void sync_server(CLIENT client, int socket)
     {
         strcpy(request,"delete ");
         strcat(request, deletedFiles[i].name);
-        send(socket, request, MAXREQUEST, 0);
+        //send(socket, request, MAXREQUEST, 0);
+        SSL_write(ssl, request, MAXREQUEST);
     }
 
     fprintf(stderr, "Sync completo\n------------------------------------\n\n");
 }
-void send_file(char *file, CLIENT client, int socket)
+void send_file(char *file, CLIENT client, int socket, SSL *ssl)
 {
     char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);
 
@@ -443,9 +440,9 @@ void send_file(char *file, CLIENT client, int socket)
 
     fprintf(stderr, "Tamanho: %d\n", fs);
 
-    safe_sendINT(socket, &fs);
-    send(socket, &(client.file_info[i].lastModified), sizeof(time_t), 0);
-
+    safe_sendINT(ssl, &fs);
+    //send(socket, &(client.file_info[i].lastModified), sizeof(time_t), 0);
+    SSL_write(ssl, &(client.file_info[i].lastModified), sizeof(time_t));
 
     FILE *fp;
     if(fs) fp = fopen(file, "r");
@@ -455,7 +452,8 @@ void send_file(char *file, CLIENT client, int socket)
     while(offset < fs)
     {
         int bytes_send = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
-        sent_bytes = send(socket, (char*) buffer, bytes_send, 0);
+        //sent_bytes = send(socket, (char*) buffer, bytes_send, 0);
+        sent_bytes = SSL_write(ssl, (char*) buffer, bytes_send);
         offset += sent_bytes;
     }
 
@@ -463,7 +461,7 @@ void send_file(char *file, CLIENT client, int socket)
     fprintf(stderr, "Download completo\n------------------------------------\n\n");
 }
 
-void receive_file(char *file, CLIENT *client, int socket)
+void receive_file(char *file, CLIENT *client, int socket, SSL *ssl)
 {
     char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);
     int fs;
@@ -478,11 +476,11 @@ void receive_file(char *file, CLIENT *client, int socket)
     {
         strcpy(filename, file);
     }
-    safe_recvINT(socket, &fs);
+    safe_recvINT(ssl, &fs);
 
     // Send last modified time (time_t)
     time_t lm;
-    safe_recv(socket, &lm, sizeof(time_t));
+    safe_recv(ssl, &lm, sizeof(time_t));
 
     if(fs)
     {
@@ -498,7 +496,8 @@ void receive_file(char *file, CLIENT *client, int socket)
             else maxRead = BUFFER_SIZE;
 
             // receive at most 1MB of data
-            read = recv(socket, buffer, maxRead, 0);
+            //read = recv(socket, buffer, maxRead, 0);
+            read = SSL_read(ssl, buffer, maxRead);
 
             // write the received data in the file
             fwrite(buffer, sizeof(char), read, fp);
@@ -629,23 +628,84 @@ int main (int argc, char *argv[])
     fprintf(stderr, "%d\n", argc);
     if(argc > 1) port_ = atoi(argv[1]);
 
-    if(connectClient() == 0)
-        printf("Servidor conectado!\n");
+    /////////// Estabelecendo SSL
+    SSL_METHOD *method;
+    SSL_CTX *ctx;
+    SSL_library_init(); //Não tinha na especif
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    method = SSLv23_server_method(); //Na especificação dizia Lv2, mas não compilava com ela, achei essa num exemplo da documentação
+    ctx = SSL_CTX_new(method);
+    if (ctx == NULL){
+        ERR_print_errors_fp(stderr);
+        abort();
+    }
+    if (SSL_CTX_use_certificate_file(ctx, "CertFile.pem", SSL_FILETYPE_PEM) <= 0) {
+        printf("Error setting the certificate file.\n");
+        exit(0);
+    }
+    if (SSL_CTX_use_PrivateKey_file(ctx, "KeyFile.pem", SSL_FILETYPE_PEM) <= 0) {
+        printf("Error setting the key file.\n");
+        exit(0);
+    }
+      /*Make sure the key and certificate file match*/
+    if (SSL_CTX_check_private_key(ctx) == 0) {
+        printf("Private key does not match the certificate public key\n");
+        exit(0);
+    }
+    /*Used only if client authentication will be used*/
+    //SSL_CTX_set_verify(ctx,SSL_VERIFY_PEER,NULL);
+    /* Load certificates of trusted CAs based on file provided
+    if (SSL_CTX_load_verify_locations(ctx,"CertFile.pem",NULL)<1) {
+        printf("Error setting the verify locations.\n");
+        exit(0);
+    }
+    /* Set CA list used for client authentication. */
+    //SSL_CTX_set_client_CA_list(ctx, SSL_CTX_get_client_CA_list(ctx));
+    ////////////////
 
+    if(connectClient() == 0){
+        printf("Servidor conectado!\n");
+    }
     initList(); //Inicializa a lista de clientes
     initServer();
     while(running_)
     {
-        socket_user = acceptLoop();
-        if(socket_user >= 0)
-        {
-            safe_recv(socket_user, id_user, MAXNAME);
+        SSL *ssl;
 
-            strcpy(user_info.username, id_user);
+        struct sockaddr_in cli_addr;
+        socklen_t clilen;
 
-            user_info.socket = socket_user;
+        clilen = sizeof(struct sockaddr_in);
+        if ((socket_user = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
+            printf("ERROR on accept\n");
+        else {
+            ssl = SSL_new(ctx);
+            SSL_set_fd(ssl, socket_user);
+            if (SSL_accept(ssl) == -1)
+                printf("ERROR on SSL_accept\n");
+            else if(socket_user >= 0){
+                /////////////////Impressão do certificado
+                X509 *cert;
+                char *line;
+                cert = SSL_get_peer_certificate(ssl);
+                if (cert != NULL){
+                    printf("Certificate:\n");
+                    line= X509_NAME_oneline(X509_get_subject_name(cert),0,0);
+                    printf("Subject: %s\n", line);
+                    free(line);
+                    line = X509_NAME_oneline(X509_get_issuer_name(cert),0,0);
+                    printf("Issuer: %s\n", line);
+                } else printf("Certificado n");
+                ///////////////////
+                safe_recv(ssl, id_user, MAXNAME);
 
-            pthread_create(&thread, NULL, client_handling, (void *)&user_info); //Thread que processa login/requisições
+                strcpy(user_info.username, id_user);
+                user_info.socket = socket_user;
+                user_info.ssl = ssl;
+
+                pthread_create(&thread, NULL, client_handling, (void *)&user_info); //Thread que processa login/requisições
+            }
         }
     }
 

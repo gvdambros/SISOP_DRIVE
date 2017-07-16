@@ -4,6 +4,8 @@
 #include "dropboxUtil.h"
 #include <semaphore.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 int connect_server(char *host, int port);
 int sync_client();
@@ -17,6 +19,8 @@ time_t getTimeServer();
 pthread_t sync_thread;
 sem_t	runningRequest;
 int running;
+SSL *ssl;
+SSL_CTX *ctx;
 int socket_client; // Maybe it shouldn't be here
 char name_client[MAXNAME];
 

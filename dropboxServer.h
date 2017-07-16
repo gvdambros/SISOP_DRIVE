@@ -4,14 +4,18 @@
 #include "dropboxUtil.h"
 #include <pthread.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 typedef struct user_info {
     char username[MAXNAME];
     int socket;
+    SSL *ssl;
 } USER_INFO;
 
-void sync_server(CLIENT client, int socket);
-void receive_file(char *file, CLIENT *client, int socket);
-void send_file(char *file, CLIENT client, int socket);
+void sync_server(CLIENT client, int socket, SSL *ssl);
+void receive_file(char *file, CLIENT *client, int socket, SSL *ssl);
+void send_file(char *file, CLIENT client, int socket, SSL *ssl);
 
 // ADDED STUFF
 //Structs
@@ -28,7 +32,6 @@ CLIENT_LIST* searchInClientList(CLIENT nodo);
 //Funções gerenciamento do server/conexoes
 void initServer();
 int connectClient();
-int acceptLoop();
 CLIENT_LIST* verifyUser(char *id_user);
 int clientLogin(CLIENT *client);
 int clientLogout(CLIENT *client, int device);

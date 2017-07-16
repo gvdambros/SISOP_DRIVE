@@ -13,6 +13,8 @@
 #include <time.h>
 #include <semaphore.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 typedef struct file_info{
     char name[MAXFILENAME];
@@ -34,9 +36,9 @@ typedef struct command{
     char param[MAXPATH];
 } user_cmd;
 
-int safe_recv(int client_fd, char *buf, int s);
-int safe_recvINT(int client_fd, int *buf);
-int safe_sendINT(int client_fd, int *buf);
+int safe_recv(SSL *ssl, char *buf, int s);
+int safe_recvINT(SSL *ssl, int *buf);
+int safe_sendINT(SSL *ssl, int *buf);
 
 int file_size(char *file);
 time_t* file_lastModified(char *file);

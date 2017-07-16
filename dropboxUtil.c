@@ -12,6 +12,9 @@
 #include <pwd.h>
 #include <dirent.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 int file_size(char *file)
 {
     struct stat file_stat;
@@ -57,26 +60,30 @@ user_cmd string2userCmd(char *cmd)
 }
 
 // wait until it receives s bytes
-int safe_recv(int client_fd, char *buf, int s)
+// nova função: SSL_read(SSL *ssl, void *buf, int num)
+// antiga: recv(int fd, void *buf, num, 0);
+int safe_recv(SSL *ssl, char *buf, int s)
 {
     int offset = 0;
     while(offset < s)
     {
-        int recv_bytes = recv(client_fd, &(buf[offset]), s, 0);
+        //int recv_bytes = recv(client_fd, &(buf[offset]), s, 0);
+        int recv_bytes = SSL_read(ssl, &(buf[offset]), s);
         offset += recv_bytes;
     }
     return offset;
 }
 
-int safe_recvINT(int client_fd, int *buf){
-    safe_recv(client_fd, buf, sizeof(int));
+int safe_recvINT(SSL *ssl, int *buf){
+    safe_recv(ssl, buf, sizeof(int));
     (*buf) = ntohl(*buf);
 }
 
 
-int safe_sendINT(int client_fd, int *buf){
+int safe_sendINT(SSL *ssl, int *buf){
     int aux = htonl(*buf);
-    send(client_fd, &aux, sizeof(int), 0);
+    //send(client_fd, &aux, sizeof(int), 0);
+    SSL_write(ssl, &aux, sizeof(int));
 }
 
 
@@ -131,7 +138,7 @@ int numberOfFilesInDir(char *dir)
 void printFiles_ClientDir(CLIENT client)
 {
     int i;
-    fprintf(stderr, "files of %s\n", client.userid);
+    fprintf(stderr, "Files:\n");
     for(i = 0; i < MAXFILES; i ++)
     {
         if(client.file_info[i].size != -1)
@@ -144,9 +151,7 @@ void printFiles_ClientDir(CLIENT client)
             timeinfo = localtime (&(client.file_info[i].lastModified));
 
             strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
-            fprintf(stderr, "aqui\n");
             fprintf(stderr, "id: %d file: %s size: %d last: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
-            fprintf(stderr, "aqui\n");
         }
     }
     return;
