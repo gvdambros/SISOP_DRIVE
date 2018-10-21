@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -43,7 +44,7 @@ int insertList(CLIENT newClient)
     return 0;
 }
 
-CLIENT_LIST* searchInClientList(CLIENT nodo)
+USER_INFO* searchInClientList(CLIENT nodo)
 {
     CLIENT_LIST *ptr;
 
@@ -51,12 +52,12 @@ CLIENT_LIST* searchInClientList(CLIENT nodo)
         return NULL; //Lista vazia
 
     ptr = clientLst_;
-    int a = NULL;
+    int a;
     while(ptr != NULL)
     {
-        a = strcmp(ptr->cli.userid, nodo.userid);
+        a = strcmp(ptr->cli.user_id, nodo.user_id);
         if(a == 0)
-            return ptr; //Retorna um CLIENT_LIST
+            return &(ptr->cli); //Retorna um CLIENT_LIST
         else
             ptr = ptr->next;
     }
@@ -104,7 +105,7 @@ int acceptLoop()
 }
 
 
-CLIENT_LIST* verifyUser(char *id_user)
+USER_INFO* verifyUser(char *user_id, char *user_password)
 {
 
     //Função responsável pela verificação da existência/registro de um cliente
@@ -113,7 +114,8 @@ CLIENT_LIST* verifyUser(char *id_user)
     CLIENT new_user;
     CLIENT_LIST *existing_user;
 
-    strcpy(new_user.userid, id_user);
+    strcpy(new_user.user_id, user_id);
+    strcpy(new_user.user_password, user_password);
 
     pthread_mutex_lock(&server_mutex_);
     existing_user = searchInClientList(new_user);
@@ -121,14 +123,14 @@ CLIENT_LIST* verifyUser(char *id_user)
     {
 
         //Registra e retorna um novo cliente
-        printf("Registrando usuário: %s\n", id_user);
+        printf("Registrando usuário: %s\n", user_id);
         new_user.devices[0] = 0;
         new_user.devices[1] = 0;
         new_user.logged_in = 0;
         initFiles_ClientDir(&new_user);
         pthread_mutex_init(&(new_user.mutex), NULL);
 
-        if (insertList(new_user) < 0)
+        if (insertList(new_user) != 0)
         {
             printf("Falha no registro do usuário\n");
             pthread_mutex_unlock(&server_mutex_);
@@ -140,9 +142,7 @@ CLIENT_LIST* verifyUser(char *id_user)
             pthread_mutex_unlock(&server_mutex_);
             return searchInClientList(new_user);
         }
-    }
-    else
-    {
+    } else {
         //Retorna um cliente existente
         printf("Usuário já registrado\n");
         pthread_mutex_unlock(&server_mutex_);
@@ -204,11 +204,14 @@ void client_handling(void* arg)
     USER_INFO user_info = *(USER_INFO*)arg;
 
     //Visa organizar todas as ações relacionadas a lidar com o login de um usuário e realizar suas solicitações
-    char id_user[MAXNAME];
-    int socket_user = user_info.socket;
-    strcpy(id_user, user_info.username);
+    char user_id[MAXNAME];
+    char user_password[MAXNAME];
 
-    CLIENT_LIST* current_client = verifyUser(id_user);    //Nodo da lista contendo as infos do usuário
+    int socket_user = user_info.socket;
+    strcpy(user_id, user_info.username);
+    strcpy(user_password, user_info.password);
+
+    CLIENT_LIST* current_client = verifyUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
     int n, device = -1, n_files = 0;                //Device ativo para esta thread
     char filename[MAXREQUEST], request[MAXNAME], *dir, *pathFile;
     time_t filetime;
@@ -229,7 +232,7 @@ void client_handling(void* arg)
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
     dir = strcat(dir, "/server_dir_");
-    dir = strcat(dir, id_user);
+    dir = strcat(dir, user_id);
     dir = strcat(dir, "/");
 
     if( !dir_exists (dir) )
@@ -297,7 +300,7 @@ void client_handling(void* arg)
             printf("I received a request I'm not prepared to handle :(\n");
         }
     }
-    printf("Service closed for %s\n", id_user);
+    printf("Service closed for %s\n", user_id);
     pthread_exit(0);
 }
 
@@ -317,7 +320,7 @@ void sync_server(CLIENT client, int socket)
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
     dir = strcat(dir, "/server_dir_");
-    dir = strcat(dir, client.userid);
+    dir = strcat(dir, client.user_id);
     dir = strcat(dir, "/");
     // bitMap[i] == 0 -> espaço vazio
     // bitMap[i] == 1 -> arquivo sync
@@ -533,7 +536,7 @@ void receive_file(char *file, CLIENT *client, int socket)
 }
 
 
-void initServer()
+int initServer()
 {
     char *user, *pathFile, *dir_prefix, c;
     pathFile = malloc(MAXPATH);
@@ -580,7 +583,7 @@ void initServer()
             }
             while(name[n]!='\0');
 
-            CLIENT_LIST *clt = verifyUser(clientname);
+            CLIENT_LIST *clt = verifyUser(clientname, "");
             memset(pathclient, '\0', MAXPATH);
             pathclient = strcpy(pathclient, pathFile);
             pathclient = strcat(pathclient, "/");
@@ -616,14 +619,15 @@ void initServer()
         }
     }
     closedir(serverdir);
+    running_ = 1;
     printf("Pronto\n\n");
+    return 0;
 }
 
 int main (int argc, char *argv[])
 {
-    running_ = 1;
     int socket_user, id_thread;
-    char id_user[MAXNAME];
+    char login[MAXNAME*2 + 2];
     pthread_t thread;
     USER_INFO user_info;
     fprintf(stderr, "%d\n", argc);
@@ -639,10 +643,9 @@ int main (int argc, char *argv[])
         socket_user = acceptLoop();
         if(socket_user >= 0)
         {
-            safe_recv(socket_user, id_user, MAXNAME);
-
-            strcpy(user_info.username, id_user);
-
+            safe_recv(socket_user, login, MAXNAME*2 + 2);
+            strcpy(user_info.username, strtok(login, " "));
+            strcpy(user_info.password, strtok(NULL, " "));
             user_info.socket = socket_user;
 
             pthread_create(&thread, NULL, client_handling, (void *)&user_info); //Thread que processa login/requisições

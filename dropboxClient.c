@@ -25,6 +25,7 @@
 
 #include <time.h>
 
+
 int connect_server(char *host, int port)
 {
     //int socket_client;
@@ -53,7 +54,7 @@ int connect_server(char *host, int port)
     int flag = 1;
     setsockopt(socket_client,IPPROTO_TCP,TCP_NODELAY,(char *)&flag,sizeof(flag));
 
-    return 0;
+    return SUCCESS;
 }
 
 void close_connection()
@@ -90,15 +91,13 @@ int sync_client()
     int i;
     char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
-    char* fileName = (char*) malloc( MAXFILENAME );
+    char* fileName = (char*) malloc(MAXFILENAME);
 
-    sem_wait(&runningRequest);
     // send request to sync
     // always send the biggest request possible
+    sem_wait(&runningRequest);
     strcpy(request,"sync");
     send(socket_client, request, MAXREQUEST, 0);
-
-
 
     int numberFiles = numberOfFiles_ClientDir(client_info);
     safe_sendINT(socket_client, &numberFiles);
@@ -117,21 +116,20 @@ int sync_client()
         strcpy(request, client_info.file_info[j].name);
         send(socket_client, request, MAXFILENAME, 0);
 
-
         // Send last modified time (time_t)
         time_t lm = client_info.file_info[j].lastModified;
         send(socket_client, &lm, sizeof(time_t), 0);
 
-        //fprintf(stderr,"%s\n",dp->d_name) ;
-        //fprintf(stderr,"%s\n",buff) ;
+        //fprintf(stderr,"%s\n",dp->d_name);
+        //fprintf(stderr,"%s\n",buff);
     }
 
-    // receive number of files that are not sync
+    // Receive number of files that are not sync
     safe_recvINT(socket_client, &numberFiles);
 
     if (numberFiles > 0)
     {
-        fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n",numberFiles );
+        fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n", numberFiles);
     }
 
     for(i = 0; i < numberFiles; i++)
@@ -139,11 +137,10 @@ int sync_client()
 
         user_cmd serverCmd;
 
-        // receive request from server
+        // Receive request from server
         safe_recv(socket_client, request, MAXREQUEST);
 
         serverCmd = string2userCmd(request);
-
 
         if(!strcmp(serverCmd.cmd, "delete"))
         {
@@ -155,6 +152,7 @@ int sync_client()
         else if(!strcmp(serverCmd.cmd, "add"))
         {
             fprintf(stderr, "O arquivo %s vai ser adicionado.\n", serverCmd.param);
+
             // receive file size from server
             int size;
             safe_recvINT(socket_client, &size);
@@ -177,6 +175,7 @@ int sync_client()
                 int maxRead;
                 if( size - acc < BUFFER_SIZE) maxRead = size - acc;
                 else maxRead = BUFFER_SIZE;
+
                 // receive at most 1MB of data
                 read = recv(socket_client, buf, maxRead, 0);
 
@@ -409,14 +408,19 @@ void delete_file(char *file)
     return;
 }
 
-void send_id(char *id)
+void send_id(char *username, char *password)
 {
-    char* request = (char*) malloc(MAXNAME);
+    char* request = (char*) malloc(MAXNAME*2 + 2);
 
     // send id to server
     // always send the biggest name possible
-    strcpy(request, id);
-    send(socket_client, request, MAXNAME, 0);
+    strcpy(request, username);
+    strcat(request, " ");
+    strcat(request, password);
+
+    printf("LOGIN: %s\n", request);
+
+    send(socket_client, request, MAXNAME*2 + 2, 0);
 
     return;
 }
@@ -503,15 +507,15 @@ void *sync_function()
 int main(int argc, char *argv[])
 {
 
-    if(argc <= 3)
+    if(argc <= 4)
     {
-        printf("call ./client fulano endereço porta\n");
+        printf("call ./client usuario senha endereço porta\n");
         return -1;
     }
 
-    printf("%s %s\n",argv[2], argv[3]);
+    printf("%s %s\n",argv[3], argv[4]);
 
-    if( connect_server(argv[2], atoi( argv[3] )) < 0)
+    if( connect_server(argv[3], atoi( argv[4] )) < 0)
     {
         printf("connection failed\n");
         return -1;
@@ -520,7 +524,7 @@ int main(int argc, char *argv[])
     {
         strcpy(name_client, argv[1]);
         fprintf(stderr, "Nome de usuário: %s\nMáquina: ", name_client);
-        send_id(argv[1]);
+        send_id(argv[1], argv[2]);
     }
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time

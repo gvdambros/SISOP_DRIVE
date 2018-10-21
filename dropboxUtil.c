@@ -131,7 +131,7 @@ int numberOfFilesInDir(char *dir)
 void printFiles_ClientDir(CLIENT client)
 {
     int i;
-    fprintf(stderr, "files of %s\n", client.userid);
+    fprintf(stderr, "files of %s\n", client.user_id);
     for(i = 0; i < MAXFILES; i ++)
     {
         if(client.file_info[i].size != -1)

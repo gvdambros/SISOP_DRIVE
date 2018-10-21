@@ -22,7 +22,8 @@ typedef struct file_info{
 
 typedef struct client{
     int devices[MAXDEVICES];
-    char userid[MAXNAME];
+    char user_id[MAXNAME];
+    char user_password[MAXNAME];
     FILE_INFO file_info[MAXFILES];
     int logged_in;
     pthread_mutex_t mutex;
