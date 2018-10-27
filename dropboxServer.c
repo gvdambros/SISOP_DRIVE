@@ -44,7 +44,7 @@ int insertList(CLIENT newClient)
     return 0;
 }
 
-USER_INFO* searchInClientList(CLIENT nodo)
+CLIENT* searchInClientList(CLIENT nodo)
 {
     CLIENT_LIST *ptr;
 
@@ -104,23 +104,14 @@ int acceptLoop()
     return new_socket_client;
 }
 
-
-USER_INFO* verifyUser(char *user_id, char *user_password)
+CLIENT* addUser(char *user_id, char *user_password)
 {
-
-    //Função responsável pela verificação da existência/registro de um cliente
-    //INSERIR LOCKS
-
     CLIENT new_user;
-    CLIENT_LIST *existing_user;
 
     strcpy(new_user.user_id, user_id);
     strcpy(new_user.user_password, user_password);
 
     pthread_mutex_lock(&server_mutex_);
-    existing_user = searchInClientList(new_user);
-    if (existing_user == NULL)
-    {
 
         //Registra e retorna um novo cliente
         printf("Registrando usuário: %s\n", user_id);
@@ -135,18 +126,37 @@ USER_INFO* verifyUser(char *user_id, char *user_password)
             printf("Falha no registro do usuário\n");
             pthread_mutex_unlock(&server_mutex_);
             return NULL;
-        }
-        else
-        {
+        } else {
             printf("Usuário registrado com sucesso\n");
             pthread_mutex_unlock(&server_mutex_);
             return searchInClientList(new_user);
         }
-    } else {
-        //Retorna um cliente existente
+}
+
+
+CLIENT* verifyUser(char *user_id, char *user_password)
+{
+
+    //Função responsável pela verificação da existência/registro de um cliente
+    //INSERIR LOCKS
+
+    CLIENT new_user;
+    CLIENT *existing_user;
+
+    strcpy(new_user.user_id, user_id);
+    strcpy(new_user.user_password, user_password);
+
+    pthread_mutex_lock(&server_mutex_);
+    existing_user = searchInClientList(new_user);
+    if (existing_user != NULL)
+    {
         printf("Usuário já registrado\n");
         pthread_mutex_unlock(&server_mutex_);
         return existing_user;
+    } else {
+        printf("O usuário não está registrado\n");
+        pthread_mutex_unlock(&server_mutex_);
+        return NULL;
     }
 }
 
@@ -211,13 +221,22 @@ void client_handling(void* arg)
     strcpy(user_id, user_info.username);
     strcpy(user_password, user_info.password);
 
-    CLIENT_LIST* current_client = verifyUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
+    CLIENT* current_client = verifyUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
+
+    if(current_client == NULL){
+        current_client = addUser(user_id, user_password);
+    }
+
+    if(current_client == NULL){
+        pthread_exit(0);
+    }
+
     int n, device = -1, n_files = 0;                //Device ativo para esta thread
     char filename[MAXREQUEST], request[MAXNAME], *dir, *pathFile;
     time_t filetime;
     char *user;
 
-    device = clientLogin(&current_client->cli); //Tenta realizar o login do usuário
+    device = clientLogin(current_client); //Tenta realizar o login do usuário
     if (device < 0)
     {
         printf("Solicitação de login cancelada\n\n");
@@ -249,35 +268,35 @@ void client_handling(void* arg)
 
         if (strcmp(commandLine.cmd, "sync") == 0)   //Solicitação de Sincronização (sync_client())
         {
-            sync_server(current_client->cli, socket_user);
+            sync_server(*current_client, socket_user);
         }
         else if (strcmp(commandLine.cmd, "download") == 0)
         {
             strcpy(pathFile, dir);
             strcat(pathFile, commandLine.param);
-            send_file(pathFile, current_client->cli, socket_user);
+            send_file(pathFile, *current_client, socket_user);
         }
         else if (strcmp(commandLine.cmd, "upload") == 0)
         {
             strcpy(pathFile, dir);
             strcat(pathFile, commandLine.param);
-            receive_file(pathFile, &(current_client->cli), socket_user);
+            receive_file(pathFile, current_client, socket_user);
         }
         else if (strcmp(commandLine.cmd, "delete") == 0)
         {
             fprintf(stderr, "delete file %s...\n", commandLine.param);
 
-            pthread_mutex_lock(&(current_client->cli.mutex));
+            pthread_mutex_lock(&(current_client->mutex));
 
-            printFiles_ClientDir(current_client->cli);
+            printFiles_ClientDir(*current_client);
 
-            deleteFile_ClientDir(&(current_client->cli), commandLine.param);
+            deleteFile_ClientDir(current_client, commandLine.param);
 
-            printFiles_ClientDir(current_client->cli);
+            printFiles_ClientDir(*current_client);
             pathFile = strcpy(pathFile, dir);
             pathFile = strcat(pathFile, commandLine.param);
             remove(pathFile);
-            pthread_mutex_unlock(&(current_client->cli.mutex));
+            pthread_mutex_unlock(&(current_client->mutex));
 
             fprintf(stderr, "delete done\n\n");
         }
@@ -291,7 +310,7 @@ void client_handling(void* arg)
         else if (strcmp(commandLine.cmd, "exit") == 0)
         {
             fprintf(stderr, "Saindo...\n\n");
-            clientLogout(&current_client->cli, device); //Realiza o logout
+            clientLogout(current_client, device); //Realiza o logout
             close(socket_user);
             pthread_exit(0);
         }
@@ -583,7 +602,7 @@ int initServer()
             }
             while(name[n]!='\0');
 
-            CLIENT_LIST *clt = verifyUser(clientname, "");
+            CLIENT_LIST *clt = addUser(clientname, "");
             memset(pathclient, '\0', MAXPATH);
             pathclient = strcpy(pathclient, pathFile);
             pathclient = strcat(pathclient, "/");
