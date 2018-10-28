@@ -62,7 +62,7 @@ void close_connection()
     close(socket_client);
 }
 
-void set_dir(char *base_dir)
+void set_dir(char *base_dir, char *name_client)
 {
 
     char *dir, *user; // nome do usuario linux
@@ -527,7 +527,7 @@ int main(int argc, char *argv[])
     }
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
-    set_dir(argv[3]);
+    set_dir(argv[3], argv[1]);
     initFiles_ClientDir(&client_info);
     initClient();
     printFiles_ClientDir(client_info);
