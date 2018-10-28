@@ -62,7 +62,7 @@ void close_connection()
     close(socket_client);
 }
 
-void set_dir()
+void set_dir(char *base_dir)
 {
 
     char *dir, *user; // nome do usuario linux
@@ -71,11 +71,12 @@ void set_dir()
     user = getLinuxUser();
 
     dir = malloc(MAXPATH);
-    dir = strcpy(dir, "/home/");
-    dir = strcat(dir, user);
+    dir = strcpy(dir, base_dir);
     dir = strcat(dir, "/sync_dir_");
     dir = strcat(dir, name_client);
     dir = strcat(dir, "/");
+
+    printf("dir: %s\n", dir);
 
     if( !dir_exists (dir) )
     {
@@ -408,11 +409,11 @@ void delete_file(char *file)
     return;
 }
 
-void send_id(char *username, char *password)
+int send_id(char *username, char *password)
 {
     char* request = (char*) malloc(MAXNAME*2 + 2);
+    int response;
 
-    // send id to server
     // always send the biggest name possible
     strcpy(request, username);
     strcat(request, " ");
@@ -422,7 +423,9 @@ void send_id(char *username, char *password)
 
     send(socket_client, request, MAXNAME*2 + 2, 0);
 
-    return;
+    safe_recvINT(socket_client, &response);
+
+    return response;
 }
 
 void *sync_function()
@@ -507,28 +510,24 @@ void *sync_function()
 int main(int argc, char *argv[])
 {
 
-    if(argc <= 4)
+    if(argc <= 5)
     {
-        printf("call ./client usuario senha endereço porta\n");
+        printf("call ./client usuario senha dir endereço porta\n");
         return -1;
     }
 
-    printf("%s %s\n",argv[3], argv[4]);
-
-    if( connect_server(argv[3], atoi( argv[4] )) < 0)
+    if( connect_server(argv[4], atoi( argv[5] )) < 0)
     {
-        printf("connection failed\n");
+        fprintf(stderr, "Connection failed\n");
         return -1;
-    }
-    else
-    {
-        strcpy(name_client, argv[1]);
-        fprintf(stderr, "Nome de usuário: %s\nMáquina: ", name_client);
-        send_id(argv[1], argv[2]);
+    } else {
+        if (send_id(argv[1], argv[2]) < 0){
+            fprintf(stderr, "Login failed\n");
+        }
     }
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
-    set_dir();
+    set_dir(argv[3]);
     initFiles_ClientDir(&client_info);
     initClient();
     printFiles_ClientDir(client_info);
@@ -536,7 +535,6 @@ int main(int argc, char *argv[])
 
     running = 1;
 
-    fprintf(stderr, "\n", name_client);
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
 
 

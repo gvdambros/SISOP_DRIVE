@@ -4,6 +4,8 @@
 #include "dropboxUtil.h"
 #include <pthread.h>
 
+#define BASE_URL "" 
+
 typedef struct user_info {
     char username[MAXNAME];
     char password[MAXNAME];
@@ -29,7 +31,6 @@ int insertList(CLIENT newCliente);
 int initServer();
 int connectClient();
 int acceptLoop();
-int clientLogin(CLIENT *client);
 int clientLogout(CLIENT *client, int device);
 void clientHandling(void* arg);
 

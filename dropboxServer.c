@@ -104,6 +104,76 @@ int acceptLoop()
     return new_socket_client;
 }
 
+int createUserDir(CLIENT new_user){
+
+    char *dir = malloc(MAXPATH);
+    char *user = getLinuxUser();
+
+    dir = strcpy(dir, "/home/");
+    dir = strcat(dir, user);
+    dir = strcat(dir, "/server_dir_");
+    dir = strcat(dir, new_user.user_id);
+    dir = strcat(dir, "/");
+
+    if( !dir_exists (dir) )
+    {
+        fprintf(stderr, "Criou diretorio em %s\n", dir);
+        mkdir(dir, 0777);
+    }
+
+    if( createUserConfigFile(new_user, dir) != 0 ){
+        free(dir);
+        return 1;
+    }
+
+    free(dir);
+    return 0;
+}
+
+int createUserConfigFile(CLIENT new_user, char *dir){
+    char *config = malloc(MAXPATH);
+    strcpy(config, dir);
+    config = strcat(config, ".config");
+    FILE *f = fopen(config, "w");
+    if (f == NULL)
+    {
+        free(config);
+        printf("Error creating config file!\n");
+        return 1;
+    }
+
+    fprintf(f, "%s\n", new_user.user_id);
+    fprintf(f, "%s\n", new_user.user_password);
+
+    fclose(f);
+    free(config);
+    return 0;
+}
+
+int readConfigFile(char *dir, char **user_id, char **user_password){
+    char *config = malloc(MAXPATH);
+    strcpy(config, dir);
+    config = strcat(config, ".config");
+    FILE *f = fopen(config, "r");
+
+    if (f == NULL)
+    {
+        free(config);
+        fprintf(stderr, "Error reading config file!\n");
+        return 1;
+    }
+
+    fscanf(f, "%s", *user_id);
+    fscanf(f, "%s", *user_password);
+
+    printf("user id: %s \n", *user_id);
+    printf("user password: %s \n", *user_password);
+
+    fclose(f);
+    free(config);
+    return 0;
+}
+
 CLIENT* addUser(char *user_id, char *user_password)
 {
     CLIENT new_user;
@@ -119,6 +189,7 @@ CLIENT* addUser(char *user_id, char *user_password)
         new_user.devices[1] = 0;
         new_user.logged_in = 0;
         initFiles_ClientDir(&new_user);
+
         pthread_mutex_init(&(new_user.mutex), NULL);
 
         if (insertList(new_user) != 0)
@@ -134,7 +205,8 @@ CLIENT* addUser(char *user_id, char *user_password)
 }
 
 
-CLIENT* verifyUser(char *user_id, char *user_password)
+
+CLIENT* searchUser(char *user_id, char *user_password)
 {
 
     //Função responsável pela verificação da existência/registro de um cliente
@@ -160,36 +232,65 @@ CLIENT* verifyUser(char *user_id, char *user_password)
     }
 }
 
-int clientLogin(CLIENT *client)
+int clientLogin(char *user_id, char *user_password, int user_socket, CLIENT **current_client){
+    *current_client = searchUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
+
+    if(*current_client == NULL){
+        printf("New user will be created.\n");
+        *current_client = addUser(user_id, user_password);
+        if(*current_client == NULL){
+            fprintf(stderr, "Error while creating user.\n");
+            return NULL;
+        }
+        if( createUserDir(**current_client) != 0){
+            fprintf(stderr, "Error while creating user directory.\n");
+            return NULL;
+        }
+    }
+
+    int n, device = -1;                //Device ativo para esta thread
+
+    device = clientValidate(*current_client, user_id, user_password); //Tenta realizar o login do usuário
+    safe_sendINT(user_socket, &device);
+
+    return device;
+}
+
+
+int clientValidate(CLIENT *client, char *user_id, char *user_password)
 {
+
+    if(strcmp(client->user_id, user_id) != 0) {
+        fprintf(stderr, "Invalid username\n");
+        return -1;
+    }
+
+    if(strcmp(client->user_password, user_password) != 0) {
+        fprintf(stderr, "Invalid password\n");
+        return -1;
+    }
 
     //Verifica se o usuário já está logado e tenta realizar o login. Retorna o id do Device utilizado caso obtenha sucesso.
     //INSERIR LOCKS
 
-    if (client->logged_in == 0)
-    {
+    if (client->logged_in == 0) {
+        client->logged_in = 1;
+        client->devices[0] = 1;
+        printf("Login efetuado no dispositivo 0\n");
+        return 0;
+    } else if (client->devices[0] == 0) {
         client->logged_in = 1;
         client->devices[0] = 1;
         printf("Login efetuado no dispositivo 0\n");
         return 0;
     }
-    else if (client->devices[0] == 0)
-    {
-        client->logged_in = 1;
-        client->devices[0] = 1;
-        printf("Login efetuado no dispositivo 0\n");
-        return 0;
-    }
-    else if (client->devices[1] == 0)
-    {
+    else if (client->devices[1] == 0) {
         client->logged_in = 1;
         client->devices[1] = 1;
         printf("Login efetuado no dispositivo 1\n");
         return 1;
-    }
-    else
-    {
-        printf("Limite de dispositivos ativos atingido! (2)\n");
+    } else {
+        fprintf(stderr, "Limite de dispositivos ativos atingido! (2)\n");
         return -1;
     }
 }
@@ -221,44 +322,24 @@ void client_handling(void* arg)
     strcpy(user_id, user_info.username);
     strcpy(user_password, user_info.password);
 
-    CLIENT* current_client = verifyUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
+    CLIENT *current_client;
 
-    if(current_client == NULL){
-        current_client = addUser(user_id, user_password);
-    }
-
-    if(current_client == NULL){
-        pthread_exit(0);
-    }
-
-    int n, device = -1, n_files = 0;                //Device ativo para esta thread
-    char filename[MAXREQUEST], request[MAXNAME], *dir, *pathFile;
-    time_t filetime;
-    char *user;
-
-    device = clientLogin(current_client); //Tenta realizar o login do usuário
+    int device = clientLogin(user_id, user_password, socket_user, &current_client);
+    
     if (device < 0)
     {
-        printf("Solicitação de login cancelada\n\n");
+        fprintf(stderr, "Solicitação de login cancelada\n\n");
         close(socket_user);   //Fecha o socket
         pthread_exit(0);    //Se não for possível, encerra a thread
-    }
+    }           
 
-    dir = malloc(MAXPATH);
-    pathFile = malloc(MAXPATH);
-    user = getLinuxUser();
+    char request[MAXNAME], *user = getLinuxUser(), *dir = malloc(MAXPATH*sizeof(char)), *pathFile = malloc(MAXPATH*sizeof(char));
 
     dir = strcpy(dir, "/home/");
     dir = strcat(dir, user);
     dir = strcat(dir, "/server_dir_");
     dir = strcat(dir, user_id);
     dir = strcat(dir, "/");
-
-    if( !dir_exists (dir) )
-    {
-        fprintf(stderr, "Criou diretorio em %s\n", dir);
-        mkdir(dir, 0777);
-    }
 
     while (running_)
     {
@@ -341,10 +422,6 @@ void sync_server(CLIENT client, int socket)
     dir = strcat(dir, "/server_dir_");
     dir = strcat(dir, client.user_id);
     dir = strcat(dir, "/");
-    // bitMap[i] == 0 -> espaço vazio
-    // bitMap[i] == 1 -> arquivo sync
-    // bitMap[i] == 2 -> arquivo não existe no usuario ou não esta sync
-
 
     for(i = 0; i < MAXFILES; i++)
     {
@@ -554,7 +631,6 @@ void receive_file(char *file, CLIENT *client, int socket)
 
 }
 
-
 int initServer()
 {
     char *user, *pathFile, *dir_prefix, c;
@@ -565,6 +641,7 @@ int initServer()
     user = getLinuxUser();
     pathFile = strcpy(pathFile, "/home/");
     pathFile = strcat(pathFile, user);
+    pathFile = strcat(pathFile, "/");
     dir_prefix = malloc(MAXPATH);
     dir_prefix = strcpy(dir_prefix, "server_dir_");
 
@@ -575,14 +652,16 @@ int initServer()
         fprintf(stderr, "Can't open %s\n", pathFile);
         return -1;
     }
-    char *name;
+    char *dir;
     char *clientname;
+    char *clientpassword;
     struct dirent *myfile;
     DIR *clientdir;
     char *pathclient;
-    clientname = malloc(MAXPATH);
-    name = malloc(MAXPATH);
-    pathclient = malloc(MAXPATH);
+    clientname = malloc(MAXNAME);
+    clientpassword = malloc(MAXNAME);
+    dir = malloc(MAXPATH);
+    // pathclient = malloc(MAXPATH);
 
     printf("Atualizando lista de usuários\n");
 
@@ -592,54 +671,47 @@ int initServer()
         memset(clientname, '\0', MAXPATH);
         if(strncmp(dir_prefix, mydir->d_name, 11) == 0)
         {
+            strcpy(dir, pathFile);
+            dir = strcat(dir, mydir->d_name);
+            dir = strcat(dir, "/");
 
-            name = strcpy(name, mydir->d_name);
-            do
-            {
-                clientname[i] = name[n];
-                n++;
-                i++;
-            }
-            while(name[n]!='\0');
+            readConfigFile(dir, &clientname, &clientpassword);
 
-            CLIENT_LIST *clt = addUser(clientname, "");
-            memset(pathclient, '\0', MAXPATH);
-            pathclient = strcpy(pathclient, pathFile);
-            pathclient = strcat(pathclient, "/");
-            pathclient = strcat(pathclient, dir_prefix);
-            pathclient = strcat(pathclient, clientname);
-            pathclient = strcat(pathclient, "/");
-            if ((clientdir = opendir(pathclient)) == NULL)
+            CLIENT *clt = addUser(clientname, clientpassword);
+
+            if ((clientdir = opendir(dir)) == NULL)
             {
-                fprintf(stderr, "Can'et open %s\n", pathclient);
+                fprintf(stderr, "Can't open %s\n", dir);
                 return 0;
             }
             while((myfile = readdir(clientdir)) != NULL)
             {
                 if (myfile->d_type == DT_REG)
                 {
+                 
                     if(myfile->d_name[strlen(myfile->d_name)-1] != '~')
                     {
                         FILE_INFO fileinf;
                         char *filepath;
                         filepath = malloc(MAXPATH);
-                        filepath = strcpy(filepath, pathclient);
+                        filepath = strcpy(filepath, dir);
                         filepath = strcat(filepath,myfile->d_name);
-                        strcpy(fileinf.name,myfile->d_name);
-                        fileinf.lastModified = *file_lastModified(filepath);
+                        strcpy(fileinf.name, myfile->d_name);
+                        fileinf.lastModified = file_lastModified(filepath);
                         fileinf.size = file_size(filepath);
-                        clt->cli.file_info[fileindex] = fileinf;
+                        clt->file_info[fileindex] = fileinf;
                         fileindex++;
                     }
                 }
             }
+
             closedir(clientdir);
             fileindex=0;
         }
     }
     closedir(serverdir);
     running_ = 1;
-    printf("Pronto\n\n");
+    printf("Server set\n");
     return 0;
 }
 

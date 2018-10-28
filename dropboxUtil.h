@@ -12,6 +12,7 @@
 
 #include <time.h>
 #include <semaphore.h>
+#include <pthread.h>
 
 
 typedef struct file_info{
@@ -40,7 +41,7 @@ int safe_recvINT(int client_fd, int *buf);
 int safe_sendINT(int client_fd, int *buf);
 
 int file_size(char *file);
-time_t* file_lastModified(char *file);
+time_t file_lastModified(char *file);
 user_cmd string2userCmd(char *cmd);
 int dir_exists(char *dir);
 char* getLinuxUser ();
