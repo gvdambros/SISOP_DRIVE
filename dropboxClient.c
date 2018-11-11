@@ -25,6 +25,7 @@
 
 #include <time.h>
 
+
 int connect_server(char *host, int port)
 {
     //int socket_client;
@@ -53,7 +54,7 @@ int connect_server(char *host, int port)
     int flag = 1;
     setsockopt(socket_client,IPPROTO_TCP,TCP_NODELAY,(char *)&flag,sizeof(flag));
 
-    return 0;
+    return SUCCESS;
 }
 
 void close_connection()
@@ -61,7 +62,7 @@ void close_connection()
     close(socket_client);
 }
 
-void set_dir()
+void set_dir(char *base_dir, char *name_client)
 {
 
     char *dir, *user; // nome do usuario linux
@@ -70,11 +71,12 @@ void set_dir()
     user = getLinuxUser();
 
     dir = malloc(MAXPATH);
-    dir = strcpy(dir, "/home/");
-    dir = strcat(dir, user);
+    dir = strcpy(dir, base_dir);
     dir = strcat(dir, "/sync_dir_");
     dir = strcat(dir, name_client);
     dir = strcat(dir, "/");
+
+    printf("dir: %s\n", dir);
 
     if( !dir_exists (dir) )
     {
@@ -87,74 +89,71 @@ void set_dir()
 int sync_client()
 {
     char *pathFile = (char*) malloc(MAXPATH);
-    int i;
+    int i, numberOfFilesChanged;
     char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
-    char* fileName = (char*) malloc( MAXFILENAME );
+    char* fileName = (char*) malloc(MAXFILENAME);
 
-    sem_wait(&runningRequest);
     // send request to sync
     // always send the biggest request possible
+    sem_wait(&runningRequest);
     strcpy(request,"sync");
     send(socket_client, request, MAXREQUEST, 0);
-
-
 
     int numberFiles = numberOfFiles_ClientDir(client_info);
     safe_sendINT(socket_client, &numberFiles);
     i = 0;
 
-    fprintf(stderr, "number of file: %d\n", numberFiles);
+    fprintf(stderr, "Number of files in client directory: %d\n", numberFiles);
 
     while(i < numberFiles)
     {
 
         int j = getIDoOfFileAtPosition_ClientDir(i++);
 
-        fprintf(stderr, "file: %s %d\n", client_info.file_info[j].name, j);
+        fprintf(stderr, "\tFile %d: %s\n", j, client_info.file_info[j].name);
 
         // Send name of file
         strcpy(request, client_info.file_info[j].name);
         send(socket_client, request, MAXFILENAME, 0);
 
-
         // Send last modified time (time_t)
         time_t lm = client_info.file_info[j].lastModified;
         send(socket_client, &lm, sizeof(time_t), 0);
 
-        //fprintf(stderr,"%s\n",dp->d_name) ;
-        //fprintf(stderr,"%s\n",buff) ;
+        //fprintf(stderr,"%s\n",dp->d_name);
+        //fprintf(stderr,"%s\n",buff);
     }
 
-    // receive number of files that are not sync
-    safe_recvINT(socket_client, &numberFiles);
+    // Receive number of files that are not sync
+    safe_recvINT(socket_client, &numberOfFilesChanged);
 
-    if (numberFiles > 0)
+    if (numberOfFilesChanged > 0)
     {
-        fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n",numberFiles );
+        fprintf(stderr, "Changes were indetified\n%d files will be synced\n", numberOfFilesChanged);
     }
 
-    for(i = 0; i < numberFiles; i++)
+    for(i = 0; i < numberOfFilesChanged; i++)
     {
 
         user_cmd serverCmd;
 
-        // receive request from server
+        // Receive request from server
         safe_recv(socket_client, request, MAXREQUEST);
 
         serverCmd = string2userCmd(request);
 
-
         if(!strcmp(serverCmd.cmd, "delete"))
         {
-            fprintf(stderr, "O arquivo %s vai ser deletado.\n", serverCmd.param);
+            fprintf(stderr, "The file %s will be deleted\n", serverCmd.param);
             sprintf( pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
             remove(pathFile);
             deleteFile_ClientDir(&client_info, serverCmd.param);
         }
         else if(!strcmp(serverCmd.cmd, "add"))
         {
-            fprintf(stderr, "O arquivo %s vai ser adicionado.\n", serverCmd.param);
+            fprintf(stderr, "The file %s will be added\n", serverCmd.param);
+
             // receive file size from server
             int size;
             safe_recvINT(socket_client, &size);
@@ -168,8 +167,6 @@ int sync_client()
 
             FILE *fp = fopen(pathFile, "w");
 
-            //fprintf(stderr, "Recebendo: %s, tamanho: %d bytes\n", fileName, size);
-
             // while it didn't read all the file, keep reading
             int acc = 0, read = 0;
             while (acc < size)
@@ -177,6 +174,7 @@ int sync_client()
                 int maxRead;
                 if( size - acc < BUFFER_SIZE) maxRead = size - acc;
                 else maxRead = BUFFER_SIZE;
+
                 // receive at most 1MB of data
                 read = recv(socket_client, buf, maxRead, 0);
 
@@ -216,6 +214,8 @@ time_t getTimeServer()
 
 void get_file(char *file)
 {
+    
+    fprintf(stderr, "File %s will be downloaded\n");
 
     char buf[BUFFER_SIZE]; //buffer 1MG
 
@@ -266,7 +266,7 @@ void get_file(char *file)
     utime(file, &new_times);
 
     sem_post(&runningRequest);
-    fprintf(stderr, "Download completo\n\n");
+    fprintf(stderr, "Download completed\n");
     return;
 }
 
@@ -409,16 +409,23 @@ void delete_file(char *file)
     return;
 }
 
-void send_id(char *id)
+int send_id(char *username, char *password)
 {
-    char* request = (char*) malloc(MAXNAME);
+    char* request = (char*) malloc(MAXNAME*2 + 2);
+    int response;
 
-    // send id to server
     // always send the biggest name possible
-    strcpy(request, id);
-    send(socket_client, request, MAXNAME, 0);
+    strcpy(request, username);
+    strcat(request, " ");
+    strcat(request, password);
 
-    return;
+    printf("LOGIN: %s\n", request);
+
+    send(socket_client, request, MAXNAME*2 + 2, 0);
+
+    safe_recvINT(socket_client, &response);
+
+    return response;
 }
 
 void *sync_function()
@@ -503,28 +510,24 @@ void *sync_function()
 int main(int argc, char *argv[])
 {
 
-    if(argc <= 3)
+    if(argc <= 5)
     {
-        printf("call ./client fulano endereço porta\n");
+        printf("call ./client usuario senha dir endereço porta\n");
         return -1;
     }
 
-    printf("%s %s\n",argv[2], argv[3]);
-
-    if( connect_server(argv[2], atoi( argv[3] )) < 0)
+    if( connect_server(argv[4], atoi( argv[5] )) < 0)
     {
-        printf("connection failed\n");
+        fprintf(stderr, "Connection failed\n");
         return -1;
-    }
-    else
-    {
-        strcpy(name_client, argv[1]);
-        fprintf(stderr, "Nome de usuário: %s\nMáquina: ", name_client);
-        send_id(argv[1]);
+    } else {
+        if (send_id(argv[1], argv[2]) < 0){
+            fprintf(stderr, "Login failed\n");
+        }
     }
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
-    set_dir();
+    set_dir(argv[3], argv[1]);
     initFiles_ClientDir(&client_info);
     initClient();
     printFiles_ClientDir(client_info);
@@ -532,7 +535,6 @@ int main(int argc, char *argv[])
 
     running = 1;
 
-    fprintf(stderr, "\n", name_client);
     pthread_create(&sync_thread, NULL, sync_function, NULL); // can happen that one user request and one sync request try to run together
 
 

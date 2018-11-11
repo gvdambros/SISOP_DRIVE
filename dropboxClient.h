@@ -4,6 +4,7 @@
 #include "dropboxUtil.h"
 #include <semaphore.h>
 
+#define SUCCESS 0
 
 int connect_server(char *host, int port);
 int sync_client();

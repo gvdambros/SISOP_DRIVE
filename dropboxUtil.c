@@ -25,14 +25,14 @@ int file_size(char *file)
     return file_stat.st_size;
 }
 
-time_t* file_lastModified(char *file){
-    time_t *t = (time_t*) malloc(sizeof(time_t));
+time_t file_lastModified(char *file){
+    time_t t;
     struct stat stbuf;
     if(stat(file, &stbuf) < 0){
         printf("Error fstat --> %s\n", file);
         return 0;
     }
-    (*t) = stbuf.st_mtime;
+    t = stbuf.st_mtime;
     return t;
 }
 
@@ -131,7 +131,7 @@ int numberOfFilesInDir(char *dir)
 void printFiles_ClientDir(CLIENT client)
 {
     int i;
-    fprintf(stderr, "files of %s\n", client.userid);
+    fprintf(stderr, "files of %s\n", client.user_id);
     for(i = 0; i < MAXFILES; i ++)
     {
         if(client.file_info[i].size != -1)
