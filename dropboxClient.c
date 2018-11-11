@@ -89,7 +89,7 @@ void set_dir(char *base_dir, char *name_client)
 int sync_client()
 {
     char *pathFile = (char*) malloc(MAXPATH);
-    int i;
+    int i, numberOfFilesChanged;
     char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
     char* fileName = (char*) malloc(MAXFILENAME);
@@ -104,14 +104,14 @@ int sync_client()
     safe_sendINT(socket_client, &numberFiles);
     i = 0;
 
-    fprintf(stderr, "number of file: %d\n", numberFiles);
+    fprintf(stderr, "Number of files in client directory: %d\n", numberFiles);
 
     while(i < numberFiles)
     {
 
         int j = getIDoOfFileAtPosition_ClientDir(i++);
 
-        fprintf(stderr, "file: %s %d\n", client_info.file_info[j].name, j);
+        fprintf(stderr, "\tFile %d: %s\n", j, client_info.file_info[j].name);
 
         // Send name of file
         strcpy(request, client_info.file_info[j].name);
@@ -126,14 +126,14 @@ int sync_client()
     }
 
     // Receive number of files that are not sync
-    safe_recvINT(socket_client, &numberFiles);
+    safe_recvINT(socket_client, &numberOfFilesChanged);
 
-    if (numberFiles > 0)
+    if (numberOfFilesChanged > 0)
     {
-        fprintf(stderr, "Identificadas modificações no servidor\n%d arquivos serão recebidos\n", numberFiles);
+        fprintf(stderr, "Changes were indetified\n%d files will be synced\n", numberOfFilesChanged);
     }
 
-    for(i = 0; i < numberFiles; i++)
+    for(i = 0; i < numberOfFilesChanged; i++)
     {
 
         user_cmd serverCmd;
@@ -145,14 +145,14 @@ int sync_client()
 
         if(!strcmp(serverCmd.cmd, "delete"))
         {
-            fprintf(stderr, "O arquivo %s vai ser deletado.\n", serverCmd.param);
+            fprintf(stderr, "The file %s will be deleted\n", serverCmd.param);
             sprintf( pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
             remove(pathFile);
             deleteFile_ClientDir(&client_info, serverCmd.param);
         }
         else if(!strcmp(serverCmd.cmd, "add"))
         {
-            fprintf(stderr, "O arquivo %s vai ser adicionado.\n", serverCmd.param);
+            fprintf(stderr, "The file %s will be added\n", serverCmd.param);
 
             // receive file size from server
             int size;
@@ -166,8 +166,6 @@ int sync_client()
             pathFile = strcat(pathFile, serverCmd.param);
 
             FILE *fp = fopen(pathFile, "w");
-
-            //fprintf(stderr, "Recebendo: %s, tamanho: %d bytes\n", fileName, size);
 
             // while it didn't read all the file, keep reading
             int acc = 0, read = 0;
@@ -216,6 +214,8 @@ time_t getTimeServer()
 
 void get_file(char *file)
 {
+    
+    fprintf(stderr, "File %s will be downloaded\n");
 
     char buf[BUFFER_SIZE]; //buffer 1MG
 
@@ -266,7 +266,7 @@ void get_file(char *file)
     utime(file, &new_times);
 
     sem_post(&runningRequest);
-    fprintf(stderr, "Download completo\n\n");
+    fprintf(stderr, "Download completed\n");
     return;
 }
 
