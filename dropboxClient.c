@@ -1,5 +1,7 @@
 #include "dropboxClient.h"
 #include "dropboxUtil.h"
+#include "logUtil.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,15 +22,18 @@
 
 #include <pthread.h>
 #include <linux/inotify.h>
-#define EVENT_SIZE  ( sizeof (struct inotify_event) )
-#define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
 
 #include <time.h>
 
+#define EVENT_SIZE  ( sizeof (struct inotify_event) )
+#define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
 
-int connect_server(char *host, int port)
+CLIENT _clientInfo;
+
+static int connectToServer(char *host, int port)
 {
-    //int socket_client;
+    logBeginningFunction("connectToServer");
+
     struct sockaddr_in socket_server;
     struct hostent *server;
 
@@ -37,8 +42,8 @@ int connect_server(char *host, int port)
 
     if (socket_client == -1)
     {
-        printf("Could not create socket\n");
-        return -1;
+        logExceptionInFunction("connectToServer", "could not create socket");
+        return ERROR;
     }
 
     socket_server.sin_addr = *((struct in_addr *)server->h_addr);
@@ -47,13 +52,14 @@ int connect_server(char *host, int port)
 
     if (connect(socket_client , (struct sockaddr *)&socket_server , sizeof(socket_server)) < 0)
     {
-        printf("Could not connect\n");
-        return -2;
+        logExceptionInFunction("connectToServer", "could not connect");
+        return ERROR;
     }
 
     int flag = 1;
     setsockopt(socket_client,IPPROTO_TCP,TCP_NODELAY,(char *)&flag,sizeof(flag));
 
+    logEndingFunction("connectToServer");
     return SUCCESS;
 }
 
@@ -88,6 +94,8 @@ void set_dir(char *base_dir, char *name_client)
 
 int sync_client()
 {
+    logBeginningFunction("sync_client");
+
     char *pathFile = (char*) malloc(MAXPATH);
     int i, numberOfFilesChanged;
     char buf[BUFFER_SIZE]; //buffer 1MG
@@ -100,7 +108,7 @@ int sync_client()
     strcpy(request,"sync");
     send(socket_client, request, MAXREQUEST, 0);
 
-    int numberFiles = numberOfFiles_ClientDir(client_info);
+    int numberFiles = numberOfFiles_ClientDir(_clientInfo);
     safe_sendINT(socket_client, &numberFiles);
     i = 0;
 
@@ -111,18 +119,16 @@ int sync_client()
 
         int j = getIDoOfFileAtPosition_ClientDir(i++);
 
-        fprintf(stderr, "\tFile %d: %s\n", j, client_info.file_info[j].name);
+        fprintf(stderr, "\tFile %d: %s\n", j, _clientInfo.file_info[j].name);
 
         // Send name of file
-        strcpy(request, client_info.file_info[j].name);
+        strcpy(request, _clientInfo.file_info[j].name);
         send(socket_client, request, MAXFILENAME, 0);
 
         // Send last modified time (time_t)
-        time_t lm = client_info.file_info[j].lastModified;
+        time_t lm = _clientInfo.file_info[j].lastModified;
         send(socket_client, &lm, sizeof(time_t), 0);
 
-        //fprintf(stderr,"%s\n",dp->d_name);
-        //fprintf(stderr,"%s\n",buff);
     }
 
     // Receive number of files that are not sync
@@ -148,7 +154,7 @@ int sync_client()
             fprintf(stderr, "The file %s will be deleted\n", serverCmd.param);
             sprintf( pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
             remove(pathFile);
-            deleteFile_ClientDir(&client_info, serverCmd.param);
+            deleteFile_ClientDir(&_clientInfo, serverCmd.param);
         }
         else if(!strcmp(serverCmd.cmd, "add"))
         {
@@ -190,14 +196,15 @@ int sync_client()
             new_times.modtime = lm;    /* set mtime to current time */
             utime(pathFile, &new_times);
 
-            addFile_ClientDir(&client_info, serverCmd.param, size, lm);
+            addFile_ClientDir(&_clientInfo, serverCmd.param, size, lm);
 
         }
 
     }
     sem_post(&runningRequest);
 
-    return 0;
+    logEndingFunction("sync_client");
+    return SUCCESS;
 }
 
 time_t getTimeServer()
@@ -291,8 +298,10 @@ void list_files()
     closedir(mydir);
 }
 
-void initClient()
+static int initClient()
 {
+    logBeginningFunction("initClient");
+
     char *pathFile = (char*) malloc(MAXPATH);
     char* fileName = (char*) malloc( MAXFILENAME );
     int i=0;
@@ -302,8 +311,8 @@ void initClient()
 
     if ((dfd = opendir(dropboxDir_)) == NULL)
     {
-        fprintf(stderr, "Can't open %s\n", dropboxDir_);
-        return 0;
+        logExceptionInFunction("initClient", "can't open directory");
+        return ERROR;
     }
 
     int numberFiles = numberOfFilesInDir(dropboxDir_);
@@ -318,16 +327,19 @@ void initClient()
             if( stat(pathFile,&stbuf ) == -1 )
             {
                 fprintf(stderr, "Unable to stat file: %s\n", pathFile) ;
-                return;
+                return ERROR;
             }
 
             fprintf(stderr, "file: %s %d\n", dp->d_name, stbuf.st_size) ;
-            strcpy( client_info.file_info[i].name ,dp->d_name);
-            client_info.file_info[i].size = stbuf.st_size;
-            client_info.file_info[i].lastModified = stbuf.st_mtime;
+            strcpy(_clientInfo.file_info[i].name ,dp->d_name);
+            _clientInfo.file_info[i].size = stbuf.st_size;
+            _clientInfo.file_info[i].lastModified = stbuf.st_mtime;
             i++;
         }
     }
+
+    logEndingFunction("initClient");
+    return SUCCESS;
 }
 
 void send_file(char *file)
@@ -394,7 +406,7 @@ void send_file(char *file)
     return;
 }
 
-void delete_file(char *file)
+int delete_file(char *file)
 {
     char* request = (char*) malloc(MAXREQUEST);
 
@@ -404,27 +416,27 @@ void delete_file(char *file)
     strcat(request, file);
     sem_wait(&runningRequest);
     send(socket_client, request, MAXREQUEST, 0);
-    deleteFile_ClientDir(&client_info, file);
+    deleteFile_ClientDir(&_clientInfo, file);
     sem_post(&runningRequest);
-    return;
+    return SUCCESS;
 }
 
 int send_id(char *username, char *password)
 {
+    logBeginningFunction("send_id");
+
     char* request = (char*) malloc(MAXNAME*2 + 2);
     int response;
 
-    // always send the biggest name possible
     strcpy(request, username);
     strcat(request, " ");
     strcat(request, password);
-
-    printf("LOGIN: %s\n", request);
 
     send(socket_client, request, MAXNAME*2 + 2, 0);
 
     safe_recvINT(socket_client, &response);
 
+    logEndingFunction("send_id");
     return response;
 }
 
@@ -473,7 +485,7 @@ void *sync_function()
                     time_t t1 = time(NULL);
                     time_t clientTime = serverTime + (t1-t0)/2;
 
-                    addFile_ClientDir(&client_info, event->name, file_size(pathFile), clientTime);
+                    addFile_ClientDir(&_clientInfo, event->name, file_size(pathFile), clientTime);
 
                     struct utimbuf new_times;
                     new_times.actime = time(NULL);
@@ -497,13 +509,12 @@ void *sync_function()
         t = time(NULL);
         tm = *localtime(&t);
 
-        //printf("sync em: %d:%d:%d\n", tm.tm_hour, tm.tm_min, tm.tm_sec);
     }
     inotify_rm_watch( guard, watch );
     close( guard );
 
     printf("Sync Thread ended\n");
-    return;
+    return NULL;
 
 }
 
@@ -513,24 +524,28 @@ int main(int argc, char *argv[])
     if(argc <= 5)
     {
         printf("call ./client usuario senha dir endereço porta\n");
-        return -1;
+        return ERROR;
     }
 
-    if( connect_server(argv[4], atoi( argv[5] )) < 0)
+    if (connectToServer(argv[4], atoi( argv[5] )) != SUCCESS)
     {
         fprintf(stderr, "Connection failed\n");
-        return -1;
+        return ERROR;
     } else {
-        if (send_id(argv[1], argv[2]) < 0){
+        if (send_id(argv[1], argv[2]) != SUCCESS){
             fprintf(stderr, "Login failed\n");
+            return ERROR;
         }
     }
 
     sem_init(&runningRequest, 0, 1); // only one request can be processed at the time
     set_dir(argv[3], argv[1]);
-    initFiles_ClientDir(&client_info);
+    initFiles_ClientDir(&_clientInfo);
     initClient();
-    printFiles_ClientDir(client_info);
+
+    fprintf(stderr, "AQUI %s %s \n", _clientInfo.user_id, _clientInfo.user_password);
+
+    printFiles_ClientDir(_clientInfo);
     sync_client();
 
     running = 1;
@@ -564,7 +579,7 @@ int main(int argc, char *argv[])
         else if(!strcmp(userCmd.cmd, "print"))
         {
             printf("Print\n");
-            printFiles_ClientDir(client_info);
+            printFiles_ClientDir(_clientInfo);
         }
         else if(!strcmp(userCmd.cmd, "time"))
         {

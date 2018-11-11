@@ -104,6 +104,26 @@ int acceptLoop()
     return new_socket_client;
 }
 
+int createUserConfigFile(CLIENT new_user, char *dir){
+    char *config = malloc(MAXPATH);
+    strcpy(config, dir);
+    config = strcat(config, ".config");
+    FILE *f = fopen(config, "w");
+    if (f == NULL)
+    {
+        free(config);
+        printf("Error creating config file!\n");
+        return ERROR;
+    }
+
+    fprintf(f, "%s\n", new_user.user_id);
+    fprintf(f, "%s\n", new_user.user_password);
+
+    fclose(f);
+    free(config);
+    return SUCCESS;
+}
+
 int createUserDir(CLIENT new_user){
 
     char *dir = malloc(MAXPATH);
@@ -121,33 +141,13 @@ int createUserDir(CLIENT new_user){
         mkdir(dir, 0777);
     }
 
-    if( createUserConfigFile(new_user, dir) != 0 ){
+    if( createUserConfigFile(new_user, dir) != SUCCESS ){
         free(dir);
-        return 1;
+        return ERROR;
     }
 
     free(dir);
-    return 0;
-}
-
-int createUserConfigFile(CLIENT new_user, char *dir){
-    char *config = malloc(MAXPATH);
-    strcpy(config, dir);
-    config = strcat(config, ".config");
-    FILE *f = fopen(config, "w");
-    if (f == NULL)
-    {
-        free(config);
-        printf("Error creating config file!\n");
-        return 1;
-    }
-
-    fprintf(f, "%s\n", new_user.user_id);
-    fprintf(f, "%s\n", new_user.user_password);
-
-    fclose(f);
-    free(config);
-    return 0;
+    return SUCCESS;
 }
 
 int readConfigFile(char *dir, char **user_id, char **user_password){
@@ -232,31 +232,6 @@ CLIENT* searchUser(char *user_id, char *user_password)
     }
 }
 
-int clientLogin(char *user_id, char *user_password, int user_socket, CLIENT **current_client){
-    *current_client = searchUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
-
-    if(*current_client == NULL){
-        printf("New user will be created.\n");
-        *current_client = addUser(user_id, user_password);
-        if(*current_client == NULL){
-            fprintf(stderr, "Error while creating user.\n");
-            return NULL;
-        }
-        if( createUserDir(**current_client) != 0){
-            fprintf(stderr, "Error while creating user directory.\n");
-            return NULL;
-        }
-    }
-
-    int n, device = -1;                //Device ativo para esta thread
-
-    device = clientValidate(*current_client, user_id, user_password); //Tenta realizar o login do usuário
-    safe_sendINT(user_socket, &device);
-
-    return device;
-}
-
-
 int clientValidate(CLIENT *client, char *user_id, char *user_password)
 {
 
@@ -293,6 +268,33 @@ int clientValidate(CLIENT *client, char *user_id, char *user_password)
         fprintf(stderr, "Limite de dispositivos ativos atingido! (2)\n");
         return -1;
     }
+}
+
+int clientLogin(char *user_id, char *user_password, int user_socket, CLIENT **current_client){
+    *current_client = searchUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
+
+    if(*current_client == NULL){
+        printf("New user will be created.\n");
+        *current_client = addUser(user_id, user_password);
+        if(*current_client == NULL){
+            fprintf(stderr, "Error while creating user.\n");
+            return -1;
+        }
+        if( createUserDir(**current_client) != 0){
+            fprintf(stderr, "Error while creating user directory.\n");
+            return -1;
+        }
+    }
+
+    int response, device = -1;                //Device ativo para esta thread
+
+    device = clientValidate(*current_client, user_id, user_password); //Tenta realizar o login do usuário
+
+    (device >= 0) ? (response = SUCCESS) : (response = ERROR);
+
+    safe_sendINT(user_socket, &response);
+
+    return device;
 }
 
 int clientLogout(CLIENT *client, int device)
@@ -512,6 +514,7 @@ void sync_server(CLIENT client, int socket)
 
     fprintf(stderr, "Sync completo\n------------------------------------\n\n");
 }
+
 void send_file(char *file, CLIENT client, int socket)
 {
     char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);

@@ -136,7 +136,6 @@ void printFiles_ClientDir(CLIENT client)
     {
         if(client.file_info[i].size != -1)
         {
-
             char buff[20];
 
             struct tm * timeinfo;
@@ -144,9 +143,7 @@ void printFiles_ClientDir(CLIENT client)
             timeinfo = localtime (&(client.file_info[i].lastModified));
 
             strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
-            fprintf(stderr, "aqui\n");
             fprintf(stderr, "id: %d file: %s size: %d last: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
-            fprintf(stderr, "aqui\n");
         }
     }
     return;

@@ -4,21 +4,24 @@ all: server client
 
 ## make client
 
-client: dropboxClient.o dropboxUtil.o
-	gcc dropboxClient.o dropboxUtil.o -o client -pthread -w
-dropboxClient.o: dropboxClient.c 
-	gcc -c dropboxClient.c -w
-dropboxUtil.o: dropboxUtil.c
-	gcc -c dropboxUtil.c
+client: dropboxClient.o dropboxUtil.o logUtil.o
+	gcc dropboxClient.o dropboxUtil.o logUtil.o -o client -pthread
+dropboxClient.o: dropboxClient.c
+	gcc -c dropboxClient.c
 
 ## make server
 
-server: dropboxServer.o dropboxUtil.o
-	gcc dropboxServer.o dropboxUtil.o -o server -pthread -w
+server: dropboxServer.o dropboxUtil.o logUtil.o
+	gcc dropboxServer.o dropboxUtil.o -o server -pthread
 dropboxServer.o: dropboxServer.c
 	gcc -c dropboxServer.c
+
+## make Utils
+
 dropboxUtil.o: dropboxUtil.c
-	gcc -c dropboxUtil.c 
+	gcc -c dropboxUtil.c
+logUtil.o: logUtil.c
+	gcc -c logUtil.c
 
 ## make clean
 clean:
