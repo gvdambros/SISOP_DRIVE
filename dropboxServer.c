@@ -1,3 +1,6 @@
+#include "dropboxServer.h"
+#include "logUtil.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,7 +10,6 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <unistd.h>
-#include "dropboxServer.h"
 #include <pthread.h>
 #include <pthread.h>
 #include <time.h>
@@ -27,8 +29,7 @@ int insertList(CLIENT newClient)
 
     if(new_node == NULL)
     {
-        printf("ERROR on insertList\n");
-        return 1;
+        return ERROR;
     }
 
     new_node->cli = newClient;
@@ -41,7 +42,7 @@ int insertList(CLIENT newClient)
         new_node->next = clientLst_;
         clientLst_ = new_node;
     }
-    return 0;
+    return SUCCESS;
 }
 
 CLIENT* searchInClientList(CLIENT nodo)
@@ -64,15 +65,15 @@ CLIENT* searchInClientList(CLIENT nodo)
     return NULL;
 }
 
-int connectClient()
+int server_turnUp()
 {
 
     struct sockaddr_in serv_addr;
 
     if ((socket_server_ = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
-        printf("ERROR opening socket\n");
-        return -1;
+        fprintf(stderr, "Error opening socket\n");
+        return ERROR;
     }
 
     serv_addr.sin_family = AF_INET;
@@ -82,13 +83,13 @@ int connectClient()
 
     if (bind(socket_server_, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
     {
-        printf("ERROR on binding\n");
-        return -1;
+        fprintf(stderr, "Error on binding\n");
+        return ERROR;
     }
 
     listen(socket_server_, 5);
 
-    return 0;
+    return SUCCESS;
 }
 
 int acceptLoop()
@@ -98,10 +99,28 @@ int acceptLoop()
     socklen_t clilen;
 
     clilen = sizeof(struct sockaddr_in);
-    if ((new_socket_client = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) == -1)
-        printf("ERROR on accept\n");
-
+    if ((new_socket_client = accept(socket_server_, (struct sockaddr *) &cli_addr, &clilen)) < 0){
+        fprintf(stderr, "Error on accept\n");
+    }
+       
     return new_socket_client;
+}
+
+int createUserConfigFile(CLIENT new_user, char *dir){
+    char *config = malloc(MAXPATH);
+    strcpy(config, dir);
+    config = strcat(config, ".config");
+    FILE *f = fopen(config, "w");
+    if (f == NULL)
+    {
+        free(config);
+        fprintf(stderr, "Error creating config file!\n");
+        return ERROR;
+    }
+
+    fclose(f);
+    free(config);
+    return SUCCESS;
 }
 
 int createUserDir(CLIENT new_user){
@@ -117,37 +136,16 @@ int createUserDir(CLIENT new_user){
 
     if( !dir_exists (dir) )
     {
-        fprintf(stderr, "Criou diretorio em %s\n", dir);
         mkdir(dir, 0777);
     }
 
-    if( createUserConfigFile(new_user, dir) != 0 ){
+    if( createUserConfigFile(new_user, dir) != SUCCESS ){
         free(dir);
-        return 1;
+        return ERROR;
     }
 
     free(dir);
-    return 0;
-}
-
-int createUserConfigFile(CLIENT new_user, char *dir){
-    char *config = malloc(MAXPATH);
-    strcpy(config, dir);
-    config = strcat(config, ".config");
-    FILE *f = fopen(config, "w");
-    if (f == NULL)
-    {
-        free(config);
-        printf("Error creating config file!\n");
-        return 1;
-    }
-
-    fprintf(f, "%s\n", new_user.user_id);
-    fprintf(f, "%s\n", new_user.user_password);
-
-    fclose(f);
-    free(config);
-    return 0;
+    return SUCCESS;
 }
 
 int readConfigFile(char *dir, char **user_id, char **user_password){
@@ -160,18 +158,15 @@ int readConfigFile(char *dir, char **user_id, char **user_password){
     {
         free(config);
         fprintf(stderr, "Error reading config file!\n");
-        return 1;
+        return ERROR;
     }
 
     fscanf(f, "%s", *user_id);
     fscanf(f, "%s", *user_password);
 
-    printf("user id: %s \n", *user_id);
-    printf("user password: %s \n", *user_password);
-
     fclose(f);
     free(config);
-    return 0;
+    return SUCCESS;
 }
 
 CLIENT* addUser(char *user_id, char *user_password)
@@ -184,7 +179,6 @@ CLIENT* addUser(char *user_id, char *user_password)
     pthread_mutex_lock(&server_mutex_);
 
         //Registra e retorna um novo cliente
-        printf("Registrando usuário: %s\n", user_id);
         new_user.devices[0] = 0;
         new_user.devices[1] = 0;
         new_user.logged_in = 0;
@@ -194,11 +188,9 @@ CLIENT* addUser(char *user_id, char *user_password)
 
         if (insertList(new_user) != 0)
         {
-            printf("Falha no registro do usuário\n");
             pthread_mutex_unlock(&server_mutex_);
             return NULL;
         } else {
-            printf("Usuário registrado com sucesso\n");
             pthread_mutex_unlock(&server_mutex_);
             return searchInClientList(new_user);
         }
@@ -222,40 +214,13 @@ CLIENT* searchUser(char *user_id, char *user_password)
     existing_user = searchInClientList(new_user);
     if (existing_user != NULL)
     {
-        printf("Usuário já registrado\n");
         pthread_mutex_unlock(&server_mutex_);
         return existing_user;
     } else {
-        printf("O usuário não está registrado\n");
         pthread_mutex_unlock(&server_mutex_);
         return NULL;
     }
 }
-
-int clientLogin(char *user_id, char *user_password, int user_socket, CLIENT **current_client){
-    *current_client = searchUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
-
-    if(*current_client == NULL){
-        printf("New user will be created.\n");
-        *current_client = addUser(user_id, user_password);
-        if(*current_client == NULL){
-            fprintf(stderr, "Error while creating user.\n");
-            return NULL;
-        }
-        if( createUserDir(**current_client) != 0){
-            fprintf(stderr, "Error while creating user directory.\n");
-            return NULL;
-        }
-    }
-
-    int n, device = -1;                //Device ativo para esta thread
-
-    device = clientValidate(*current_client, user_id, user_password); //Tenta realizar o login do usuário
-    safe_sendINT(user_socket, &device);
-
-    return device;
-}
-
 
 int clientValidate(CLIENT *client, char *user_id, char *user_password)
 {
@@ -276,38 +241,56 @@ int clientValidate(CLIENT *client, char *user_id, char *user_password)
     if (client->logged_in == 0) {
         client->logged_in = 1;
         client->devices[0] = 1;
-        printf("Login efetuado no dispositivo 0\n");
         return 0;
     } else if (client->devices[0] == 0) {
         client->logged_in = 1;
         client->devices[0] = 1;
-        printf("Login efetuado no dispositivo 0\n");
         return 0;
     }
     else if (client->devices[1] == 0) {
         client->logged_in = 1;
         client->devices[1] = 1;
-        printf("Login efetuado no dispositivo 1\n");
         return 1;
     } else {
-        fprintf(stderr, "Limite de dispositivos ativos atingido! (2)\n");
         return -1;
     }
 }
 
+int clientLogin(char *user_id, char *user_password, int user_socket, CLIENT **current_client){
+    *current_client = searchUser(user_id, user_password);    //Nodo da lista contendo as infos do usuário
+
+    if(*current_client == NULL){
+        fprintf(stderr, "New user will be created.\n");
+        *current_client = addUser(user_id, user_password);
+        if(*current_client == NULL){
+            fprintf(stderr, "Error while creating user.\n");
+            return -1;
+        }
+        if( createUserDir(**current_client) != 0){
+            fprintf(stderr, "Error while creating user directory.\n");
+            return -1;
+        }
+    }
+
+    int response, device = -1;                //Device ativo para esta thread
+
+    device = clientValidate(*current_client, user_id, user_password); //Tenta realizar o login do usuário
+
+    (device >= 0) ? (response = SUCCESS) : (response = ERROR);
+
+    safe_sendINT(user_socket, &response);
+
+    return device;
+}
+
 int clientLogout(CLIENT *client, int device)
 {
-
-    //Realiza o logout do usuário devidamente
-    //INSERIR LOCKS
-
     client->devices[device] = 0;
     if ((client->devices[0] == 0) && (client->devices[1] == 0))
     {
         client->logged_in = 0;
     }
-    printf("Logout efetuado no dispositivo %d\n", device);
-    return 0;
+    return SUCCESS;
 }
 
 void client_handling(void* arg)
@@ -328,7 +311,7 @@ void client_handling(void* arg)
     
     if (device < 0)
     {
-        fprintf(stderr, "Solicitação de login cancelada\n\n");
+        fprintf(stderr, "User login canceled\n");
         close(socket_user);   //Fecha o socket
         pthread_exit(0);    //Se não for possível, encerra a thread
     }           
@@ -344,7 +327,6 @@ void client_handling(void* arg)
     while (running_)
     {
         safe_recv(socket_user, request, MAXREQUEST);
-        fprintf(stderr, "------------------------------------\nSolicitacao: %s\n",request);
         user_cmd commandLine = string2userCmd(request);
 
         if (strcmp(commandLine.cmd, "sync") == 0)   //Solicitação de Sincronização (sync_client())
@@ -390,24 +372,23 @@ void client_handling(void* arg)
         }
         else if (strcmp(commandLine.cmd, "exit") == 0)
         {
-            fprintf(stderr, "Saindo...\n\n");
+            fprintf(stderr, "Logout\n");
             clientLogout(current_client, device); //Realiza o logout
             close(socket_user);
-            pthread_exit(0);
+            pthread_exit(SUCCESS);
         }
         else
         {
-            printf("I received a request I'm not prepared to handle :(\n");
+            fprintf(stderr, "I received a request I'm not prepared to handle :(\n");
         }
     }
-    printf("Service closed for %s\n", user_id);
-    pthread_exit(0);
+    pthread_exit(SUCCESS);
 }
 
 
 void sync_server(CLIENT client, int socket)
 {
-    fprintf(stderr, "Sync iniciado: ");
+    logBeginningFunction("sync_server");
     int numberFilesClient, numberFilesServer = numberOfFiles_ClientDir(client), i, j, count = 0, numberOfDeletedFiles = 0;
     int *bitMap = calloc(MAXFILES, sizeof(int));
     char buffer[BUFFER_SIZE], *pathFile = malloc(MAXPATH), *user = malloc(MAXNAME), *dir = malloc(MAXPATH), *filename = malloc(MAXFILENAME);
@@ -433,7 +414,7 @@ void sync_server(CLIENT client, int socket)
 
     safe_recvINT(socket, &numberFilesClient);
 
-    fprintf(stderr, "O usuário tem %d arquivos:\n", numberFilesClient);
+    fprintf(stderr, "The user has %d files\n", numberFilesClient);
 
     // Check to see which files are sync
     // bitMap keeps track of them
@@ -443,7 +424,7 @@ void sync_server(CLIENT client, int socket)
         safe_recv(socket, filename, MAXFILENAME);
         safe_recv(socket, &lastModified, sizeof(time_t));
 
-        fprintf(stderr, " - arquivo: %s ", filename);
+        fprintf(stderr, " - %s ", filename);
 
         // find file in the client dir
         if( (j = findFile_ClientDir(client, filename)) < 0)
@@ -454,7 +435,7 @@ void sync_server(CLIENT client, int socket)
         // if the file in the user computer is sync
         else if(!difftime(lastModified, client.file_info[j].lastModified ))
         {
-            fprintf(stderr, " (sincronizado)\n", filename);
+            fprintf(stderr, " (sinc)\n", filename);
             bitMap[j] = 1;
             count++;
         }
@@ -466,7 +447,6 @@ void sync_server(CLIENT client, int socket)
     count = numberOfDeletedFiles + numberFilesServer - count;
     safe_sendINT(socket, &count);
 
-    fprintf(stderr, "%d vão ser enviados dos %d arquivos no servidor\n", count, numberFilesServer);
     // send files that are not sync
     for(i = 0; i < MAXFILES; i++)
     {
@@ -477,8 +457,6 @@ void sync_server(CLIENT client, int socket)
             strcat(pathFile, client.file_info[i].name);
 
             int fs = client.file_info[i].size;
-
-            fprintf(stderr, "enviando %s %d bytes\n", client.file_info[i].name, fs);
 
             strcpy(request,"add ");
 
@@ -510,14 +488,17 @@ void sync_server(CLIENT client, int socket)
         send(socket, request, MAXREQUEST, 0);
     }
 
-    fprintf(stderr, "Sync completo\n------------------------------------\n\n");
+    logEndingFunction("sync_server");
 }
+
 void send_file(char *file, CLIENT client, int socket)
 {
+
+    logBeginningFunction("send_file");
+
     char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);
 
     int fs;
-    fprintf(stderr, "Download iniciado\n");
 
     if( strrchr(file, '/') )
     {
@@ -540,8 +521,6 @@ void send_file(char *file, CLIENT client, int socket)
         fs = client.file_info[i].size;
     }
 
-    fprintf(stderr, "Tamanho: %d\n", fs);
-
     safe_sendINT(socket, &fs);
     send(socket, &(client.file_info[i].lastModified), sizeof(time_t), 0);
 
@@ -559,15 +538,15 @@ void send_file(char *file, CLIENT client, int socket)
     }
 
     if(fs) fclose(fp);
-    fprintf(stderr, "Download completo\n------------------------------------\n\n");
+    logEndingFunction("send_file");
 }
 
 void receive_file(char *file, CLIENT *client, int socket)
 {
     char buffer[BUFFER_SIZE], *filename = malloc(MAXFILENAME);
     int fs;
-
-    fprintf(stderr, "Upload iniciado\n");
+    
+    logBeginningFunction("receive_file");
 
     if( strrchr(file, '/') )
     {
@@ -586,8 +565,6 @@ void receive_file(char *file, CLIENT *client, int socket)
     if(fs)
     {
         FILE *fp = fopen(file, "w");
-
-        fprintf(stderr, "Tamanho: %d\n", fs);
 
         int acc = 0, read, maxRead;
         while (acc < fs)
@@ -625,19 +602,23 @@ void receive_file(char *file, CLIENT *client, int socket)
         struct utimbuf new_times;
         new_times.actime = time(NULL);
         new_times.modtime = lm;    /* set mtime to current time */
+
         utime(file, &new_times);
     }
-    fprintf(stderr, "Upload completo\n------------------------------------\n\n");
+
+    logEndingFunction("receive_file");
 
 }
 
 int initServer()
 {
+
+    logBeginningFunction("initServer");
+
     char *user, *pathFile, *dir_prefix, c;
     pathFile = malloc(MAXPATH);
     DIR *serverdir;
     struct dirent *mydir;
-    printf("Máquina: ");
     user = getLinuxUser();
     pathFile = strcpy(pathFile, "/home/");
     pathFile = strcat(pathFile, user);
@@ -649,8 +630,8 @@ int initServer()
 
     if ((serverdir = opendir(pathFile)) == NULL)
     {
-        fprintf(stderr, "Can't open %s\n", pathFile);
-        return -1;
+        logExceptionInFunction("initServer", "Can't open server directory");
+        return ERROR;
     }
     char *dir;
     char *clientname;
@@ -661,9 +642,8 @@ int initServer()
     clientname = malloc(MAXNAME);
     clientpassword = malloc(MAXNAME);
     dir = malloc(MAXPATH);
-    // pathclient = malloc(MAXPATH);
-
-    printf("Atualizando lista de usuários\n");
+    
+    fprintf(stderr, "Updating user list\n");
 
     while((mydir = readdir(serverdir)) != NULL)
     {
@@ -681,8 +661,8 @@ int initServer()
 
             if ((clientdir = opendir(dir)) == NULL)
             {
-                fprintf(stderr, "Can't open %s\n", dir);
-                return 0;
+                logExceptionInFunction("initServer", "Can't open user directory");
+                return ERROR;
             }
             while((myfile = readdir(clientdir)) != NULL)
             {
@@ -711,8 +691,9 @@ int initServer()
     }
     closedir(serverdir);
     running_ = 1;
-    printf("Server set\n");
-    return 0;
+    
+    logEndingFunction("initServer");
+    return SUCCESS;
 }
 
 int main (int argc, char *argv[])
@@ -721,14 +702,14 @@ int main (int argc, char *argv[])
     char login[MAXNAME*2 + 2];
     pthread_t thread;
     USER_INFO user_info;
-    fprintf(stderr, "%d\n", argc);
     if(argc > 1) port_ = atoi(argv[1]);
 
-    if(connectClient() == 0)
-        printf("Servidor conectado!\n");
+    server_turnUp();
 
     initList(); //Inicializa a lista de clientes
+    
     initServer();
+    
     while(running_)
     {
         socket_user = acceptLoop();

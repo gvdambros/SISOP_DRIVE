@@ -4,29 +4,22 @@
 #include "dropboxUtil.h"
 #include <semaphore.h>
 
-#define SUCCESS 0
-
-int connect_server(char *host, int port);
 int sync_client();
-void send_file(char *file);
-void get_file(char *file);
+int send_file(char *file);
+int get_file(char *file);
 void close_connection();
-time_t getTimeServer();
+time_t gettime();
+int delete_file(char *file);
 
 // ADDED STUFF
 
 pthread_t sync_thread;
-sem_t	runningRequest;
+sem_t runningRequest;
 int running;
-int socket_client; // Maybe it shouldn't be here
+int socket_client;
 char name_client[MAXNAME];
-
-CLIENT client_info;
-void delete_file(char *file);
-
 char dropboxDir_[200];
 
 // ADDED STUFF
-
 
 #endif // DROPBOXCLIENT_H_INCLUDED

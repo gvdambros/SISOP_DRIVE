@@ -14,6 +14,8 @@
 #include <semaphore.h>
 #include <pthread.h>
 
+#define SUCCESS 0
+#define ERROR 1
 
 typedef struct file_info{
     char name[MAXFILENAME];
