@@ -12,7 +12,7 @@ dropboxClient.o: dropboxClient.c
 ## make server
 
 server: dropboxServer.o dropboxUtil.o logUtil.o
-	gcc dropboxServer.o dropboxUtil.o -o server -pthread
+	gcc dropboxServer.o dropboxUtil.o logUtil.o -o server -pthread
 dropboxServer.o: dropboxServer.c
 	gcc -c dropboxServer.c
 

@@ -5,10 +5,10 @@
 #include <semaphore.h>
 
 int sync_client();
-void send_file(char *file);
-void get_file(char *file);
+int send_file(char *file);
+int get_file(char *file);
 void close_connection();
-time_t getTimeServer();
+time_t gettime();
 int delete_file(char *file);
 
 // ADDED STUFF

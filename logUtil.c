@@ -11,6 +11,10 @@ void logBeginningFunction(const char *function){
     fprintf(stderr, "Function %s is starting\n", function);
 }
 
+void logMiddleFunction(const char *message){
+    fprintf(stderr, "\t%s\n", message);
+}
+
 void logEndingFunction(const char *function){
     fprintf(stderr, "Function %s is ending\n", function);
     logDashedLine();

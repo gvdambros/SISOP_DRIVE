@@ -82,8 +82,6 @@ void set_dir(char *base_dir, char *name_client)
     dir = strcat(dir, name_client);
     dir = strcat(dir, "/");
 
-    printf("dir: %s\n", dir);
-
     if( !dir_exists (dir) )
     {
         mkdir(dir, 0777);
@@ -101,6 +99,7 @@ int sync_client()
     char buf[BUFFER_SIZE]; //buffer 1MG
     char* request = (char*) malloc(MAXREQUEST);
     char* fileName = (char*) malloc(MAXFILENAME);
+    char message[1024];
 
     // send request to sync
     // always send the biggest request possible
@@ -112,14 +111,16 @@ int sync_client()
     safe_sendINT(socket_client, &numberFiles);
     i = 0;
 
-    fprintf(stderr, "Number of files in client directory: %d\n", numberFiles);
+    snprintf(message, sizeof(message), "Number of files in client directory: %d", numberFiles);
+    logMiddleFunction(message);
 
     while(i < numberFiles)
     {
 
         int j = getIDoOfFileAtPosition_ClientDir(i++);
 
-        fprintf(stderr, "\tFile %d: %s\n", j, _clientInfo.file_info[j].name);
+        snprintf(message, sizeof(message), "\tFile %d: %s", j, _clientInfo.file_info[j].name);
+        logMiddleFunction(message);
 
         // Send name of file
         strcpy(request, _clientInfo.file_info[j].name);
@@ -136,7 +137,8 @@ int sync_client()
 
     if (numberOfFilesChanged > 0)
     {
-        fprintf(stderr, "Changes were indetified\n%d files will be synced\n", numberOfFilesChanged);
+        snprintf(message, sizeof(message), "Changes were indetified and %d files will be synced", numberOfFilesChanged);
+        logMiddleFunction(message);
     }
 
     for(i = 0; i < numberOfFilesChanged; i++)
@@ -151,14 +153,17 @@ int sync_client()
 
         if(!strcmp(serverCmd.cmd, "delete"))
         {
-            fprintf(stderr, "The file %s will be deleted\n", serverCmd.param);
-            sprintf( pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
+            snprintf(message, sizeof(message), "The file %s will be deleted", serverCmd.param);
+            logMiddleFunction(message);
+            
+            sprintf(pathFile, "%s/%s",dropboxDir_,serverCmd.param) ;
             remove(pathFile);
             deleteFile_ClientDir(&_clientInfo, serverCmd.param);
         }
         else if(!strcmp(serverCmd.cmd, "add"))
         {
-            fprintf(stderr, "The file %s will be added\n", serverCmd.param);
+            snprintf(message, sizeof(message), "The file %s will be added", serverCmd.param);
+            logMiddleFunction(message);
 
             // receive file size from server
             int size;
@@ -206,9 +211,11 @@ int sync_client()
     logEndingFunction("sync_client");
     return SUCCESS;
 }
-
-time_t getTimeServer()
+ 
+time_t get_time()
 {
+    logBeginningFunction("get_time");
+
     time_t lm;
     char* request = (char*) malloc(MAXREQUEST);
     strcpy(request,"time");
@@ -216,13 +223,19 @@ time_t getTimeServer()
     send(socket_client, request, MAXREQUEST, 0);
     safe_recv(socket_client, &lm, sizeof(time_t));
     sem_post(&runningRequest);
+
+    logEndingFunction("get_time");
     return lm;
 }
 
-void get_file(char *file)
+int get_file(char *file)
 {
     
-    fprintf(stderr, "File %s will be downloaded\n");
+    logBeginningFunction("get_file");
+
+    char message[1024];
+    snprintf(message, sizeof(message), "File %s will be downloaded\n", file);
+    logMiddleFunction(message);
 
     char buf[BUFFER_SIZE]; //buffer 1MG
 
@@ -239,14 +252,18 @@ void get_file(char *file)
     int size;
     int sent_bytes = safe_recvINT(socket_client, &size);
 
-    fprintf(stderr, "Tamanho: %d\n", size);
-
     // receive last modified time (time_t)
     time_t lm;
     safe_recv(socket_client, &lm, sizeof(lm));
 
     // create the file
     FILE *fp = fopen(file, "w");
+
+    if(!fp){
+        sem_post(&runningRequest); 
+        logExceptionInFunction("get_file", "could not create file");
+        return ERROR;
+    }
 
     // while it didn't read all the file, keep reading
     int acc = 0;
@@ -273,29 +290,37 @@ void get_file(char *file)
     utime(file, &new_times);
 
     sem_post(&runningRequest);
-    fprintf(stderr, "Download completed\n");
-    return;
+
+    logEndingFunction("get_file");
+    return SUCCESS;
 }
 
-void list_files()
+int list_files()
 {
+
+    logBeginningFunction("list_files");
+
     DIR *mydir;
     struct dirent *myfile;
     struct stat mystat;
+    char message[1024];
 
     if ((mydir = opendir(dropboxDir_)) == NULL)
     {
-        fprintf(stderr, "Can't open %s\n", dropboxDir_);
-        return 0;
+        logExceptionInFunction("list_files", "Can't open directory");
+        return ERROR;
     }
 
     while((myfile = readdir(mydir)) != NULL)
     {
         stat(myfile->d_name, &mystat);
-        printf("%d",mystat.st_size);
-        printf(" %s\n", myfile->d_name);
+        snprintf(message, sizeof(message), "%d %s", mystat.st_size, myfile->d_name);
+        logMiddleFunction(message);
     }
     closedir(mydir);
+
+    logEndingFunction("list_files");
+    return SUCCESS;
 }
 
 static int initClient()
@@ -305,6 +330,7 @@ static int initClient()
     char *pathFile = (char*) malloc(MAXPATH);
     char* fileName = (char*) malloc( MAXFILENAME );
     int i=0;
+    char message[1024];
 
     struct dirent *dp;
     DIR *dfd;
@@ -326,11 +352,11 @@ static int initClient()
             sprintf( pathFile, "%s/%s",dropboxDir_,dp->d_name) ;
             if( stat(pathFile,&stbuf ) == -1 )
             {
-                fprintf(stderr, "Unable to stat file: %s\n", pathFile) ;
+                snprintf(message, sizeof(message), "Unable to stat file: %s", pathFile);
+                logExceptionInFunction("initClient", message);
                 return ERROR;
             }
 
-            fprintf(stderr, "file: %s %d\n", dp->d_name, stbuf.st_size) ;
             strcpy(_clientInfo.file_info[i].name ,dp->d_name);
             _clientInfo.file_info[i].size = stbuf.st_size;
             _clientInfo.file_info[i].lastModified = stbuf.st_mtime;
@@ -342,11 +368,14 @@ static int initClient()
     return SUCCESS;
 }
 
-void send_file(char *file)
+int send_file(char *file)
 {
+
+    logBeginningFunction("send_file");
+
     char *request = (char*) malloc(MAXREQUEST), *filename = malloc(MAXFILENAME);
     int fs, aux, sent_bytes, offset = 0;
-    char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE], message[1024];
 
     sem_wait(&runningRequest);
 
@@ -358,19 +387,25 @@ void send_file(char *file)
     {
         strcpy(filename, file);
     }
-    fprintf(stderr, "Nome do arquivo: %s\n", filename);
 
-    if((fs = file_size(file)) < 0)
-    {
-        fs = 0;
+    snprintf(message, sizeof(message), "The file %s will be sended", filename);
+    logMiddleFunction(message);
+
+
+    fs = file_size(file);
+
+    if(fs <= 0){
+        sem_post(&runningRequest);
+        logExceptionInFunction("send_file", "Invalid file");
+        return ERROR;
     }
-
-    time_t *lastModified;
-    if( (lastModified = file_lastModified(file)) == NULL)
+    
+    time_t lastModified;
+    if( (lastModified = file_lastModified(file)) == 0)
     {
-        fs = 0;
-        time_t aux = time(NULL);
-        lastModified = &aux;
+        sem_post(&runningRequest);
+        logExceptionInFunction("send_file", "Invalid file");
+        return ERROR;
     }
 
     // send request to upload of file
@@ -383,12 +418,9 @@ void send_file(char *file)
     safe_sendINT(socket_client, &fs);
 
     // send last modified
-    send(socket_client, lastModified, sizeof(time_t), 0);
+    send(socket_client, &lastModified, sizeof(time_t), 0);
 
-    FILE *fp;
-    if(fs) fp = fopen(file, "r");
-
-    fprintf(stderr, "Tamanho: %d\n", fs);
+    FILE *fp = fopen(file, "r");
 
     while(offset < fs)
     {
@@ -397,17 +429,18 @@ void send_file(char *file)
         offset += sent_bytes;
     }
 
-    printf("Envio completo\n\n");
-
-    if(fs) fclose(fp);
+    fclose(fp);
 
     sem_post(&runningRequest);
 
-    return;
+    logEndingFunction("send_file");
+    return SUCCESS;
 }
 
 int delete_file(char *file)
 {
+    logBeginningFunction("delete_file");
+
     char* request = (char*) malloc(MAXREQUEST);
 
     // send request to delete file
@@ -418,6 +451,8 @@ int delete_file(char *file)
     send(socket_client, request, MAXREQUEST, 0);
     deleteFile_ClientDir(&_clientInfo, file);
     sem_post(&runningRequest);
+
+    logEndingFunction("delete_file");
     return SUCCESS;
 }
 
@@ -447,10 +482,9 @@ void *sync_function()
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
 
-
     if((guard = inotify_init())< 0)
     {
-        printf("INOTIFY not initializated\n");
+        fprintf(stderr, "INOTIFY not initializated\n");
     }
     watch = inotify_add_watch( guard, dropboxDir_, IN_MOVED_FROM | IN_MOVED_TO | IN_CLOSE_WRITE | IN_CREATE | IN_DELETE );
 
@@ -463,11 +497,7 @@ void *sync_function()
 
         sleep(10);
 
-        if( (numOfChanges = read( guard, buffer, EVENT_BUF_LEN )) < 0)
-        {
-            //nothing was read
-        }
-
+        numOfChanges = read( guard, buffer, EVENT_BUF_LEN );
         i = 0;
         while ( i < numOfChanges )
         {
@@ -478,10 +508,10 @@ void *sync_function()
                 {
                     // server has to decide if it was a new file or a modification by seeing if the file already exists.
                     sprintf(pathFile, "%s%s",dropboxDir_,event->name) ;
-                    fprintf(stderr, "Arquivo modificado na pasta local:  %s\n", event->name);
+                    fprintf(stderr, "Changes in file %s were detected\n", event->name);
 
                     time_t t0 = time(NULL);
-                    time_t serverTime = getTimeServer();
+                    time_t serverTime = get_time();
                     time_t t1 = time(NULL);
                     time_t clientTime = serverTime + (t1-t0)/2;
 
@@ -497,7 +527,6 @@ void *sync_function()
                 }
                 else if ( (event->mask & IN_DELETE) || (event->mask & IN_MOVED_FROM) )
                 {
-                    // new function.
                     delete_file(event->name);
                 }
             }
@@ -513,7 +542,7 @@ void *sync_function()
     inotify_rm_watch( guard, watch );
     close( guard );
 
-    printf("Sync Thread ended\n");
+    fprintf(stderr, "Sync Thread ended\n");
     return NULL;
 
 }
@@ -523,7 +552,7 @@ int main(int argc, char *argv[])
 
     if(argc <= 5)
     {
-        printf("call ./client usuario senha dir endereço porta\n");
+        fprintf(stderr, "call ./client usuario senha dir endereço porta\n");
         return ERROR;
     }
 
@@ -543,8 +572,6 @@ int main(int argc, char *argv[])
     initFiles_ClientDir(&_clientInfo);
     initClient();
 
-    fprintf(stderr, "AQUI %s %s \n", _clientInfo.user_id, _clientInfo.user_password);
-
     printFiles_ClientDir(_clientInfo);
     sync_client();
 
@@ -563,32 +590,23 @@ int main(int argc, char *argv[])
 
         if(!strcmp(userCmd.cmd, "upload"))
         {
-            printf("Upload\n");
             send_file(userCmd.param);
         }
         else if(!strcmp(userCmd.cmd, "download"))
         {
-            printf("Download\n");
             get_file(userCmd.param);
         }
         else if(!strcmp(userCmd.cmd, "list"))
         {
-            printf("List\n");
             list_files();
         }
         else if(!strcmp(userCmd.cmd, "print"))
         {
-            printf("Print\n");
             printFiles_ClientDir(_clientInfo);
         }
         else if(!strcmp(userCmd.cmd, "time"))
         {
-            printf("Time\n");
-            fprintf (stderr, "%lld\n", (long long) getTimeServer());
-        }
-        else if(!strcmp(userCmd.cmd, "get_sync_dir"))
-        {
-            printf("Get Sync DIR\n");
+            fprintf (stderr, "%lld\n", (long long) get_time());
         }
         else if(!strcmp(userCmd.cmd, "exit"))
         {
@@ -598,7 +616,7 @@ int main(int argc, char *argv[])
     }
     while(strcmp(userCmd.cmd, "exit"));
 
-    printf("Finishing program...\n");
+    fprintf(stderr, "Finishing program...\n");
 
     // kill sync thread
     running = 0;

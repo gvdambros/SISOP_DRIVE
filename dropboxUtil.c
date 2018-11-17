@@ -18,8 +18,7 @@ int file_size(char *file)
 
     if (stat(file, &file_stat) < 0)
     {
-        printf("Error fstat --> %s\n", file);
-        return -1;
+        return 0;
     }
 
     return file_stat.st_size;
@@ -29,7 +28,6 @@ time_t file_lastModified(char *file){
     time_t t;
     struct stat stbuf;
     if(stat(file, &stbuf) < 0){
-        printf("Error fstat --> %s\n", file);
         return 0;
     }
     t = stbuf.st_mtime;
@@ -102,7 +100,6 @@ char* getLinuxUser ()
     {
         user = malloc(strlen(pw->pw_name + 1));
         strcpy(user, pw->pw_name);
-        puts (user);
         return user;
     }
     return -1;
@@ -131,7 +128,6 @@ int numberOfFilesInDir(char *dir)
 void printFiles_ClientDir(CLIENT client)
 {
     int i;
-    fprintf(stderr, "files of %s\n", client.user_id);
     for(i = 0; i < MAXFILES; i ++)
     {
         if(client.file_info[i].size != -1)
@@ -143,7 +139,6 @@ void printFiles_ClientDir(CLIENT client)
             timeinfo = localtime (&(client.file_info[i].lastModified));
 
             strftime(buff, sizeof(buff), "%b %d %H:%M", timeinfo);
-            fprintf(stderr, "id: %d file: %s size: %d last: %s\n", i, client.file_info[i].name, client.file_info[i].size, buff);
         }
     }
     return;
@@ -159,7 +154,6 @@ int addFile_ClientDir(CLIENT *client, char *file, int size, time_t lastModified)
 
     }
 
-    fprintf(stderr, "Arquivo adicionado\n");
     strcpy( client->file_info[i].name, file);
     client->file_info[i].size = size;
     client->file_info[i].lastModified = lastModified;
@@ -185,7 +179,6 @@ int findFile_ClientDir(CLIENT client, char *file)
     int i = 0;
     while(i < MAXFILES && strcmp(client.file_info[i].name, file))
     {
-        //fprintf(stderr, "File: %s\n", client.file_info[i].name);
         i++;
     }
     if(i >= MAXFILES)
@@ -198,12 +191,10 @@ int findFile_ClientDir(CLIENT client, char *file)
 int deleteFile_ClientDir(CLIENT *client, char *file)
 {
     int i = 0;
-    fprintf(stderr, "Excluindo");
     if((i = findFile_ClientDir(*client, file)) == -1)
     {
         return -1;
     }
-    fprintf(stderr, "%s %s %d", file, client->file_info[i].name, i);
     client->file_info[i].size = -1;
     strcpy(client->file_info[i].name,"");
     return 0;
